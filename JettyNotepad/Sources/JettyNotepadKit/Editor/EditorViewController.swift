@@ -51,9 +51,17 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
 
     // MARK: - NSTextViewDelegate
 
+    private var hasCheckedMidTree = false
+
     public func textDidChange(_ notification: Notification) {
         document?.content = textView.string
         document?.updateChangeCount(.changeDone)
         document?.autoSaveManager.documentContentDidChange()
+
+        // One-time mid-tree edit check per session
+        if !hasCheckedMidTree {
+            hasCheckedMidTree = true
+            document?.checkMidTreeEdit()
+        }
     }
 }

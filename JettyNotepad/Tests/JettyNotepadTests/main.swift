@@ -50,6 +50,19 @@ if CommandLine.arguments.contains("--gate2") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--gate3") {
+    // Phase 3 gate: create external companion + populate registry
+    let tmpTxt = "/tmp/jnpt_gate3_test.txt"
+    try "Gate 3 external test content".write(toFile: tmpTxt, atomically: true, encoding: .utf8)
+    let txtURL = URL(fileURLWithPath: tmpTxt)
+    let (store, uuid, _) = try ExternalFileManager.openOrCreateCompanion(for: txtURL, content: "Gate 3 external test content")
+    store.close()
+    let companionPath = ExternalFileManager.companionURL(for: uuid).path
+    print("COMPANION=\(companionPath)")
+    print("REGISTRY=\(RegistryManager.registryURL.path)")
+    exit(0)
+}
+
 print("=== JettyNotepad Test Suite ===\n")
 
 // Phase 1 tests
@@ -61,5 +74,12 @@ runJNTFileStoreTests()
 runDiffMatchPatchTests()
 runSnapshotManagerTests()
 runSaveAsTests()
+
+// Phase 3 tests
+runExternalFileManagerTests()
+runRegistryManagerTests()
+runSourceChainManagerTests()
+runCleanupManagerTests()
+runMidTreeEditTests()
 
 printSummary()

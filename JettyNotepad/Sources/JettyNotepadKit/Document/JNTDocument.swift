@@ -7,8 +7,15 @@ public class JNTDocument: NSDocument {
     public var fileUUID: UUID = UUID()
     public let autoSaveManager = AutoSaveManager()
     public var snapshotManager: SnapshotManager?
+    public var sourceChainManager: SourceChainManager?
     private var tabStateManager: TabStateManager?
     private var isManualSave = false
+
+    // External file support
+    public var isExternalFile = false
+    public var externalFileURL: URL?
+    public var companionUUID: UUID?
+    private var midTreeEditAcknowledged = false
 
     // MARK: - NSDocument Overrides
 
@@ -16,11 +23,14 @@ public class JNTDocument: NSDocument {
     public override class var autosavesDrafts: Bool { true }
 
     public override class var readableTypes: [String] {
-        ["com.jettymarquis.jettynotepad.jnt"]
+        ["com.jettymarquis.jettynotepad.jnt", "public.plain-text", "net.daringfireball.markdown"]
     }
 
     public override func writableTypes(for saveOperation: NSDocument.SaveOperationType) -> [String] {
-        ["com.jettymarquis.jettynotepad.jnt"]
+        if isExternalFile {
+            return ["public.plain-text", "net.daringfireball.markdown"]
+        }
+        return ["com.jettymarquis.jettynotepad.jnt"]
     }
 
     public override class func isNativeType(_ name: String) -> Bool {
@@ -50,27 +60,57 @@ public class JNTDocument: NSDocument {
     // MARK: - Reading
 
     public override func read(from url: URL, ofType typeName: String) throws {
-        let store = try JNTFileStore(url: url)
-        let state = try store.readDocumentState()
+        let ext = url.pathExtension.lowercased()
 
-        self.fileStore = store
-        self.snapshotManager = SnapshotManager(fileStore: store)
-        self.content = state.content
-        self.lastSavedContent = state.content
+        if ext == "jnt" {
+            // Native .jnt file
+            let store = try JNTFileStore(url: url)
+            let state = try store.readDocumentState()
+            self.fileStore = store
+            self.snapshotManager = SnapshotManager(fileStore: store)
+            self.sourceChainManager = SourceChainManager(fileStore: store)
+            self.content = state.content
+            self.lastSavedContent = state.content
 
-        if let uuidStr = try store.readMetadata(key: "file_uuid"),
-           let uuid = UUID(uuidString: uuidStr) {
+            if let uuidStr = try store.readMetadata(key: "file_uuid"),
+               let uuid = UUID(uuidString: uuidStr) {
+                self.fileUUID = uuid
+            }
+        } else {
+            // External file (.txt, .md)
+            let data = try Data(contentsOf: url)
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw NSError(domain: "JettyNotepad", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Unable to read file as text"])
+            }
+            self.content = text
+            self.lastSavedContent = text
+            self.isExternalFile = true
+            self.externalFileURL = url
+
+            // Open or create companion .jnt
+            let (store, uuid, _) = try ExternalFileManager.openOrCreateCompanion(for: url, content: text)
+            self.fileStore = store
+            self.companionUUID = uuid
             self.fileUUID = uuid
+            self.snapshotManager = SnapshotManager(fileStore: store)
+            self.sourceChainManager = SourceChainManager(fileStore: store)
         }
     }
 
     // MARK: - Writing
 
     public override func write(to url: URL, ofType typeName: String) throws {
+        if isExternalFile {
+            try writeExternal(to: url)
+            return
+        }
+
         if fileStore == nil {
             // First save of a new document
             fileStore = try JNTFileStore.create(at: url, content: content, uuid: fileUUID)
             snapshotManager = SnapshotManager(fileStore: fileStore!)
+            sourceChainManager = SourceChainManager(fileStore: fileStore!)
         } else if fileStore!.url != url {
             // Save As — generation tracking
             try performSaveAs(to: url)
@@ -87,7 +127,6 @@ public class JNTDocument: NSDocument {
                 )
                 try snapshotManager?.evictIfNeeded()
             }
-
             try fileStore!.saveContent(
                 content,
                 cursor: editorViewController?.textView.selectedRange().location ?? 0,
@@ -95,6 +134,32 @@ public class JNTDocument: NSDocument {
             )
         }
 
+        // Update registry
+        updateRegistry()
+        lastSavedContent = content
+        isManualSave = false
+        updateTabState()
+    }
+
+    private func writeExternal(to url: URL) throws {
+        // 1. Write original format
+        let targetURL = externalFileURL ?? url
+        try content.write(to: targetURL, atomically: true, encoding: .utf8)
+
+        // 2. Update companion .jnt
+        if let store = fileStore, content != lastSavedContent {
+            let snapshotType = isManualSave ? "manualSave" : "autoSave"
+            try snapshotManager?.createSnapshot(
+                previousContent: lastSavedContent,
+                currentContent: content,
+                type: snapshotType,
+                editSummary: nil
+            )
+            try store.saveContent(content, cursor: 0, scroll: 0)
+            try snapshotManager?.evictIfNeeded()
+        }
+
+        updateRegistry()
         lastSavedContent = content
         isManualSave = false
         updateTabState()
@@ -124,73 +189,75 @@ public class JNTDocument: NSDocument {
         // 1. Create forkPoint snapshot in parent
         if content != lastSavedContent {
             try snapshotManager?.createSnapshot(
-                previousContent: lastSavedContent,
-                currentContent: content,
-                type: "forkPoint",
-                editSummary: nil
-            )
+                previousContent: lastSavedContent, currentContent: content,
+                type: "forkPoint", editSummary: nil)
         } else {
-            // Even if content unchanged, mark the fork point
             try snapshotManager?.createSnapshot(
-                previousContent: content,
-                currentContent: content,
-                type: "forkPoint",
-                editSummary: nil
-            )
+                previousContent: content, currentContent: content,
+                type: "forkPoint", editSummary: nil)
         }
 
-        // 2. Get parent's current snapshot seq for the fork reference
         let parentSnapshots = try parentStore.readSnapshotManifest()
         let forkSeq = parentSnapshots.first?.seq ?? 0
-
-        // 3. Generate new UUID for the child
         let childUUID = UUID()
 
-        // 4. Register child in parent's children table
-        try parentStore.addChild(
-            uuid: childUUID,
-            path: url.path,
-            forkTimestamp: Date(),
-            forkSeq: forkSeq
-        )
-
-        // 5. Save parent state
+        try parentStore.addChild(uuid: childUUID, path: url.path,
+                                 forkTimestamp: Date(), forkSeq: forkSeq)
         try parentStore.saveContent(
             content,
             cursor: editorViewController?.textView.selectedRange().location ?? 0,
-            scroll: Double(editorViewController?.textView.enclosingScrollView?.contentView.bounds.origin.y ?? 0)
-        )
+            scroll: Double(editorViewController?.textView.enclosingScrollView?.contentView.bounds.origin.y ?? 0))
 
-        // 6. Create new .jnt at target path
         let childStore = try JNTFileStore.create(at: url, content: content, uuid: childUUID)
-
-        // 7. Write parent lineage metadata in child
         try childStore.writeMetadata(key: "parent_uuid", value: fileUUID.uuidString)
         try childStore.writeMetadata(key: "parent_path", value: parentStore.url.path)
         try childStore.writeMetadata(key: "parent_snapshot_seq", value: "\(forkSeq)")
         try childStore.writeMetadata(key: "parent_fork_timestamp",
                                      value: ISO8601DateFormatter().string(from: Date()))
 
-        // 8. Create a forkPoint snapshot in child (empty diff, seq 0 equivalent)
-        let dmp = DiffMatchPatch()
-        let emptyPatch = dmp.patchToText(patches: [])
-        let emptyData = (emptyPatch.isEmpty ? " " : emptyPatch).data(using: .utf8)!
+        let emptyData = " ".data(using: .utf8)!
         let compressed = try (emptyData as NSData).compressed(using: .zlib) as Data
-        _ = try childStore.insertSnapshot(
-            type: "forkPoint",
-            editSummary: nil,
-            diffData: compressed,
-            lengthBefore: content.utf8.count,
-            lengthAfter: content.utf8.count
-        )
+        _ = try childStore.insertSnapshot(type: "forkPoint", editSummary: nil,
+                                          diffData: compressed,
+                                          lengthBefore: content.utf8.count,
+                                          lengthAfter: content.utf8.count)
 
-        // 9. Switch to child document
         parentStore.close()
         self.fileStore = childStore
         self.snapshotManager = SnapshotManager(fileStore: childStore)
+        self.sourceChainManager = SourceChainManager(fileStore: childStore)
         self.fileUUID = childUUID
         self.lastSavedContent = content
+        updateRegistry()
         updateTabState()
+    }
+
+    // MARK: - Mid-Tree Edit Warning
+
+    public func checkMidTreeEdit() {
+        guard !midTreeEditAcknowledged,
+              let chain = sourceChainManager,
+              (try? chain.hasChildren()) == true else { return }
+
+        let children = (try? chain.childrenInfo()) ?? []
+        guard !children.isEmpty else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "This document has \(children.count) downstream version(s)"
+        alert.informativeText = "Editing here may make those versions' history incomplete. We recommend saving as a new version."
+        alert.addButton(withTitle: "Save As New Version")
+        alert.addButton(withTitle: "Continue Editing")
+
+        if let window = windowControllers.first?.window {
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertFirstButtonReturn {
+                    self.runModalSavePanel(for: .saveAsOperation, delegate: nil,
+                                           didSave: nil, contextInfo: nil)
+                } else {
+                    self.midTreeEditAcknowledged = true
+                }
+            }
+        }
     }
 
     // MARK: - Change Tracking
@@ -230,6 +297,26 @@ public class JNTDocument: NSDocument {
             name = JNTFileStore.displayNameFromContent(content)
         }
         tabStateManager?.updateBaseName(name)
-        tabStateManager?.setState(content != lastSavedContent ? .modified : .saved)
+
+        if isExternalFile {
+            tabStateManager?.setState(content != lastSavedContent ? .modified : .external)
+        } else {
+            tabStateManager?.setState(content != lastSavedContent ? .modified : .saved)
+        }
+    }
+
+    private func updateRegistry() {
+        guard let store = fileStore else { return }
+        let entry = RegistryEntry(
+            jntPath: store.url.path,
+            isCompanion: isExternalFile,
+            companionOriginalPath: externalFileURL?.path,
+            displayName: JNTFileStore.displayNameFromContent(content),
+            lastModifiedAt: ISO8601DateFormatter().string(from: Date()),
+            parentUUID: try? store.readMetadata(key: "parent_uuid"),
+            childUUIDs: ((try? store.readChildren()) ?? []).map { $0.childUUID.uuidString },
+            sizeBytes: 0
+        )
+        try? RegistryManager.upsert(uuid: fileUUID, entry: entry)
     }
 }

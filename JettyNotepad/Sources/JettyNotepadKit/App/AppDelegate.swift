@@ -37,6 +37,8 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         appMenu.addItem(withTitle: "About JettyNotepad", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Preferences...", action: #selector(showPreferences(_:)), keyEquivalent: ",")
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit JettyNotepad", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // File menu
@@ -130,5 +132,14 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
         historyPanel = HistoryPanelController(document: doc)
         historyPanel?.showWindow(sender)
+    }
+
+    private var preferencesWC: PreferencesWindowController?
+
+    @objc func showPreferences(_ sender: Any?) {
+        if preferencesWC == nil {
+            preferencesWC = PreferencesWindowController()
+        }
+        preferencesWC?.showWindow(sender)
     }
 }
