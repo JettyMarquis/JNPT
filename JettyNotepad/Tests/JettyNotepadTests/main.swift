@@ -65,6 +65,9 @@ if CommandLine.arguments.contains("--gate3") {
 
 print("=== JettyNotepad Test Suite ===\n")
 
+// Phase 4-5 tests
+runMarkdownTests()
+
 // Phase 1 tests
 runSQLiteDatabaseTests()
 runJNTSchemaTests()

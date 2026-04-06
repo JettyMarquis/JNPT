@@ -3,6 +3,7 @@ import AppKit
 public class EditorViewController: NSViewController, NSTextViewDelegate {
     public var textView: NSTextView!
     public weak var document: JNTDocument?
+    public private(set) var jntTextStorage: JNTTextStorage?
 
     public override func loadView() {
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -11,7 +12,9 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         scrollView.autoresizingMask = [.width, .height]
 
         let contentSize = scrollView.contentSize
-        let textStorage = NSTextStorage()
+        let storage = JNTTextStorage()
+        self.jntTextStorage = storage
+        let textStorage: NSTextStorage = storage
         let layoutManager = NSLayoutManager()
         textStorage.addLayoutManager(layoutManager)
 
@@ -47,6 +50,13 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
             textView.string = content
         }
         view.window?.makeFirstResponder(textView)
+    }
+
+    // MARK: - Markdown toggle
+
+    public func toggleMarkdownRendering(_ enabled: Bool) {
+        jntTextStorage?.markdownRenderingEnabled = enabled
+        jntTextStorage?.invalidateAndReapplyStyles()
     }
 
     // MARK: - NSTextViewDelegate

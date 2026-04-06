@@ -97,6 +97,17 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         historyItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(historyItem)
 
+        // Format menu
+        let formatMenu = NSMenu(title: "Format")
+        let formatMenuItem = NSMenuItem()
+        formatMenuItem.submenu = formatMenu
+        mainMenu.addItem(formatMenuItem)
+
+        let mdToggle = NSMenuItem(title: "Markdown Rendering",
+                                   action: #selector(toggleMarkdown(_:)), keyEquivalent: "M")
+        mdToggle.keyEquivalentModifierMask = [.command, .shift]
+        formatMenu.addItem(mdToggle)
+
         // Window menu
         let windowMenu = NSMenu(title: "Window")
         let windowMenuItem = NSMenuItem()
@@ -135,6 +146,14 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var preferencesWC: PreferencesWindowController?
+
+    @objc func toggleMarkdown(_ sender: NSMenuItem) {
+        guard let doc = NSDocumentController.shared.currentDocument as? JNTDocument,
+              let editor = doc.editorViewController else { return }
+        let newState = !(editor.jntTextStorage?.markdownRenderingEnabled ?? false)
+        editor.toggleMarkdownRendering(newState)
+        sender.state = newState ? .on : .off
+    }
 
     @objc func showPreferences(_ sender: Any?) {
         if preferencesWC == nil {
