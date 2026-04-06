@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 public class AppDelegate: NSObject, NSApplicationDelegate {
     public override init() {
@@ -57,6 +58,18 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(saveAsItem)
 
         fileMenu.addItem(.separator())
+        let exportMenu = NSMenu(title: "Export As")
+        let exportItem = NSMenuItem()
+        exportItem.title = "Export As"
+        exportItem.submenu = exportMenu
+        fileMenu.addItem(exportItem)
+
+        exportMenu.addItem(withTitle: "Plain Text (.txt)...",
+            action: #selector(exportAsText(_:)), keyEquivalent: "")
+        exportMenu.addItem(withTitle: "Markdown (.md)...",
+            action: #selector(exportAsMarkdown(_:)), keyEquivalent: "")
+
+        fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileMenu.addItem(.separator())
 
@@ -86,6 +99,25 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         let findItem = NSMenuItem(title: "Find...", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
         findItem.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
         editMenu.addItem(findItem)
+
+        editMenu.addItem(.separator())
+        let spellingMenu = NSMenu(title: "Spelling and Grammar")
+        let spellingItem = NSMenuItem()
+        spellingItem.title = "Spelling and Grammar"
+        spellingItem.submenu = spellingMenu
+        editMenu.addItem(spellingItem)
+
+        spellingMenu.addItem(withTitle: "Show Spelling and Grammar",
+            action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
+        spellingMenu.addItem(withTitle: "Check Document Now",
+            action: #selector(NSText.checkSpelling(_:)), keyEquivalent: ";")
+        spellingMenu.addItem(.separator())
+        spellingMenu.addItem(withTitle: "Check Spelling While Typing",
+            action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: "")
+        spellingMenu.addItem(withTitle: "Check Grammar With Spelling",
+            action: #selector(NSTextView.toggleGrammarChecking(_:)), keyEquivalent: "")
+        spellingMenu.addItem(withTitle: "Correct Spelling Automatically",
+            action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: "")
 
         // View menu
         let viewMenu = NSMenu(title: "View")
@@ -146,6 +178,29 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var preferencesWC: PreferencesWindowController?
+
+    @objc func exportAsText(_ sender: Any?) {
+        exportDocument(withExtension: "txt", typeName: "Plain Text")
+    }
+
+    @objc func exportAsMarkdown(_ sender: Any?) {
+        exportDocument(withExtension: "md", typeName: "Markdown")
+    }
+
+    private func exportDocument(withExtension ext: String, typeName: String) {
+        guard let doc = NSDocumentController.shared.currentDocument as? JNTDocument,
+              let window = doc.windowControllers.first?.window else { return }
+        let panel = NSSavePanel()
+        panel.message = "Export does not include history, snapshots, or branch information."
+        panel.nameFieldStringValue = JNTFileStore.displayNameFromContent(doc.content) + ".\(ext)"
+        if let utType = UTType(filenameExtension: ext) {
+            panel.allowedContentTypes = [utType]
+        }
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? doc.content.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
 
     @objc func toggleMarkdown(_ sender: NSMenuItem) {
         guard let doc = NSDocumentController.shared.currentDocument as? JNTDocument,

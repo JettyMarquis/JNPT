@@ -49,7 +49,24 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         if let content = document?.content, textView.string != content {
             textView.string = content
         }
+        let defaults = UserDefaults.standard
+        configureSpellCheck(
+            enabled:     defaults.bool(forKey: "spellCheckEnabled"),
+            autoCorrect: defaults.bool(forKey: "autoCorrectEnabled"),
+            grammar:     defaults.bool(forKey: "grammarCheckEnabled")
+        )
+        if defaults.bool(forKey: "markdownDefaultEnabled") {
+            toggleMarkdownRendering(true)
+        }
         view.window?.makeFirstResponder(textView)
+    }
+
+    // MARK: - Spell check
+
+    public func configureSpellCheck(enabled: Bool, autoCorrect: Bool, grammar: Bool) {
+        textView.isContinuousSpellCheckingEnabled = enabled
+        textView.isAutomaticSpellingCorrectionEnabled = autoCorrect
+        textView.isGrammarCheckingEnabled = grammar
     }
 
     // MARK: - Markdown toggle

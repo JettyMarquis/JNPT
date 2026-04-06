@@ -29,15 +29,36 @@ struct PreferencesView: View {
     @State private var orphanRetentionDays: String = "90"
     @State private var maxCapacityMB: String = ""
 
+    @AppStorage("markdownDefaultEnabled") private var markdownDefaultEnabled = false
+    @AppStorage("spellCheckEnabled")      private var spellCheckEnabled      = false
+    @AppStorage("autoCorrectEnabled")     private var autoCorrectEnabled     = false
+    @AppStorage("grammarCheckEnabled")    private var grammarCheckEnabled    = false
+
     var body: some View {
         TabView {
             generalTab
                 .tabItem { Label("General", systemImage: "gear") }
             historyTab
                 .tabItem { Label("History", systemImage: "clock") }
+            editorTab
+                .tabItem { Label("Editor", systemImage: "pencil") }
         }
         .padding(20)
         .frame(width: 430, height: 360)
+    }
+
+    private var editorTab: some View {
+        Form {
+            Section("Markdown") {
+                Toggle("Enable Markdown rendering for new documents",
+                       isOn: $markdownDefaultEnabled)
+            }
+            Section("Spelling") {
+                Toggle("Check spelling while typing",     isOn: $spellCheckEnabled)
+                Toggle("Correct spelling automatically",  isOn: $autoCorrectEnabled)
+                Toggle("Check grammar with spelling",     isOn: $grammarCheckEnabled)
+            }
+        }
     }
 
     private var generalTab: some View {
