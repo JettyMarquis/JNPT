@@ -3,68 +3,42 @@
 macOS native text editor with built-in version history and branch tracking.
 
 ## Tech Stack
-
-- **Language:** Swift 5.9+ with AppKit (NOT SwiftUI for main UI)
-- **Editor Engine:** NSTextView + TextKit 1
-- **Storage:** SQLite for .jnt file format (WAL mode, atomic writes)
-- **Diff Algorithm:** diff-match-patch (clean-room Swift implementation, ~500 lines, zero third-party)
-- **Deployment Target:** macOS 13 (Ventura)+
+- Swift 5.9+ / AppKit (NOT SwiftUI for main UI)
+- SQLite for .jnt file format (WAL mode)
+- diff-match-patch (clean-room Swift, ~500 lines) — Phase 2
+- Deployment target: macOS 13+
+- Build system: Swift Package Manager
 
 ## Build
-
-```bash
-cd /Users/vox/JNPT/JettyNotepad
-xcodebuild -scheme JettyNotepad -configuration Debug build
+```
+cd /Users/vox/JNPT/JettyNotepad && swift build
 ```
 
 ## Test
+```
+cd /Users/vox/JNPT/JettyNotepad && swift test
+```
 
-```bash
-cd /Users/vox/JNPT/JettyNotepad
-xcodebuild -scheme JettyNotepad -configuration Debug test
+## Run
+```
+cd /Users/vox/JNPT/JettyNotepad && swift run JettyNotepad
 ```
 
 ## Architecture
+See docs/ARCHITECTURE.md
 
-See `docs/ARCHITECTURE.md` for full architecture documentation.
+## Project Layout
+- `Sources/JettyNotepadKit/` — Library: all app logic (Storage, Document, Editor, Window, AutoSave)
+- `Sources/JettyNotepad/` — Executable: just main.swift entry point
+- `Tests/JettyNotepadTests/` — Unit tests
+- `scripts/bundle.sh` — Package binary into .app bundle
 
-## Key Constraints
-
-- `NSDocument` subclass for document lifecycle — do not create custom lifecycle
-- `NSTabbedWindow` for tab management — `tabbingMode = .preferred`
-- WAL mode for all SQLite connections — `PRAGMA journal_mode=WAL`
-- 100 snapshot limit per document — enforced by SQLite trigger
-- Save never creates new generations; only Save As does
-- Undo/Redo persists across saves — save never clears undo stack
-- Tab coloring via custom view (title suffix indicators), not private API
-- Zero third-party dependencies in Phase 1 — system frameworks only
-- `.jnt` files opened from disk are untrusted input — validate with `PRAGMA integrity_check`
-
-## Project Structure
-
-```
-JNPT/
-├── CLAUDE.md                    # This file
-├── LICENSE                      # MIT
-├── README.md
-├── CHANGELOG.md
-├── AGENT_PROMPT_v1.1.0.md       # Phase 1-3 long-running agent prompt
-├── TODO.md                      # Phase 4-5 deferred work
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── competitive-research.md
-│   └── jnt-format-and-branch-system-spec.md
-└── JettyNotepad/                # Xcode project (Phase 1)
-    ├── JettyNotepad/
-    │   ├── App/
-    │   ├── Document/
-    │   ├── Editor/
-    │   ├── Storage/
-    │   ├── Window/
-    │   ├── AutoSave/
-    │   ├── Snapshot/            # Phase 2
-    │   ├── History/             # Phase 2
-    │   ├── External/            # Phase 3
-    │   └── SourceChain/         # Phase 3
-    └── JettyNotepadTests/
-```
+## Critical Rules
+1. AppKit for main UI. SwiftUI ONLY via NSHostingView for Preferences.
+2. NSDocument subclass is the document model.
+3. SQLite = .jnt. Use sqlite3 C API via Swift bridging. No Core Data. No GRDB.
+4. Reverse diff chain: current content in full; older versions reconstructed backward.
+5. Save != new generation. Only Save As creates parent-child links.
+6. Undo persists across saves.
+7. macOS 13+ only. No APIs from 14+.
+8. Zero third-party dependencies in Phase 1.
