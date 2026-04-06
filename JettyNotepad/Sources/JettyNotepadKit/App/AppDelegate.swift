@@ -85,11 +85,15 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         findItem.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
         editMenu.addItem(findItem)
 
-        // View menu (empty in Phase 1, History added in Phase 2)
+        // View menu
         let viewMenu = NSMenu(title: "View")
         let viewMenuItem = NSMenuItem()
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
+
+        let historyItem = NSMenuItem(title: "History", action: #selector(showHistory(_:)), keyEquivalent: "H")
+        historyItem.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(historyItem)
 
         // Window menu
         let windowMenu = NSMenu(title: "Window")
@@ -109,5 +113,22 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         helpMenuItem.submenu = helpMenu
         mainMenu.addItem(helpMenuItem)
         NSApp.helpMenu = helpMenu
+    }
+
+    // MARK: - Actions
+
+    private var historyPanel: HistoryPanelController?
+
+    @objc func showHistory(_ sender: Any?) {
+        guard let doc = NSDocumentController.shared.currentDocument as? JNTDocument else { return }
+        guard doc.fileStore != nil else {
+            let alert = NSAlert()
+            alert.messageText = "No History Available"
+            alert.informativeText = "Save the document first to start tracking history."
+            alert.runModal()
+            return
+        }
+        historyPanel = HistoryPanelController(document: doc)
+        historyPanel?.showWindow(sender)
     }
 }

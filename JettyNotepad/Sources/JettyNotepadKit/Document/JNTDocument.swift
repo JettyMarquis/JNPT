@@ -6,7 +6,9 @@ public class JNTDocument: NSDocument {
     public var lastSavedContent: String = ""
     public var fileUUID: UUID = UUID()
     public let autoSaveManager = AutoSaveManager()
+    public var snapshotManager: SnapshotManager?
     private var tabStateManager: TabStateManager?
+    private var isManualSave = false
 
     // MARK: - NSDocument Overrides
 
@@ -52,6 +54,7 @@ public class JNTDocument: NSDocument {
         let state = try store.readDocumentState()
 
         self.fileStore = store
+        self.snapshotManager = SnapshotManager(fileStore: store)
         self.content = state.content
         self.lastSavedContent = state.content
 
@@ -67,12 +70,24 @@ public class JNTDocument: NSDocument {
         if fileStore == nil {
             // First save of a new document
             fileStore = try JNTFileStore.create(at: url, content: content, uuid: fileUUID)
+            snapshotManager = SnapshotManager(fileStore: fileStore!)
         } else if fileStore!.url != url {
-            // Save As to a different location
-            fileStore?.close()
-            fileStore = try JNTFileStore.create(at: url, content: content, uuid: UUID())
+            // Save As — generation tracking
+            try performSaveAs(to: url)
+            return
         } else {
-            // Regular save to same location
+            // Regular save — create snapshot if content changed
+            if content != lastSavedContent {
+                let snapshotType = isManualSave ? "manualSave" : "autoSave"
+                try snapshotManager?.createSnapshot(
+                    previousContent: lastSavedContent,
+                    currentContent: content,
+                    type: snapshotType,
+                    editSummary: nil
+                )
+                try snapshotManager?.evictIfNeeded()
+            }
+
             try fileStore!.saveContent(
                 content,
                 cursor: editorViewController?.textView.selectedRange().location ?? 0,
@@ -81,19 +96,101 @@ public class JNTDocument: NSDocument {
         }
 
         lastSavedContent = content
+        isManualSave = false
         updateTabState()
     }
 
     public override func save(to url: URL, ofType typeName: String,
                               for saveOperation: NSDocument.SaveOperationType,
                               completionHandler: @escaping (Error?) -> Void) {
+        if saveOperation == .saveOperation {
+            isManualSave = true
+        }
         super.save(to: url, ofType: typeName, for: saveOperation) { error in
             if error == nil {
                 self.lastSavedContent = self.content
                 self.updateTabState()
             }
+            self.isManualSave = false
             completionHandler(error)
         }
+    }
+
+    // MARK: - Save As: Generation Tracking
+
+    private func performSaveAs(to url: URL) throws {
+        guard let parentStore = fileStore else { return }
+
+        // 1. Create forkPoint snapshot in parent
+        if content != lastSavedContent {
+            try snapshotManager?.createSnapshot(
+                previousContent: lastSavedContent,
+                currentContent: content,
+                type: "forkPoint",
+                editSummary: nil
+            )
+        } else {
+            // Even if content unchanged, mark the fork point
+            try snapshotManager?.createSnapshot(
+                previousContent: content,
+                currentContent: content,
+                type: "forkPoint",
+                editSummary: nil
+            )
+        }
+
+        // 2. Get parent's current snapshot seq for the fork reference
+        let parentSnapshots = try parentStore.readSnapshotManifest()
+        let forkSeq = parentSnapshots.first?.seq ?? 0
+
+        // 3. Generate new UUID for the child
+        let childUUID = UUID()
+
+        // 4. Register child in parent's children table
+        try parentStore.addChild(
+            uuid: childUUID,
+            path: url.path,
+            forkTimestamp: Date(),
+            forkSeq: forkSeq
+        )
+
+        // 5. Save parent state
+        try parentStore.saveContent(
+            content,
+            cursor: editorViewController?.textView.selectedRange().location ?? 0,
+            scroll: Double(editorViewController?.textView.enclosingScrollView?.contentView.bounds.origin.y ?? 0)
+        )
+
+        // 6. Create new .jnt at target path
+        let childStore = try JNTFileStore.create(at: url, content: content, uuid: childUUID)
+
+        // 7. Write parent lineage metadata in child
+        try childStore.writeMetadata(key: "parent_uuid", value: fileUUID.uuidString)
+        try childStore.writeMetadata(key: "parent_path", value: parentStore.url.path)
+        try childStore.writeMetadata(key: "parent_snapshot_seq", value: "\(forkSeq)")
+        try childStore.writeMetadata(key: "parent_fork_timestamp",
+                                     value: ISO8601DateFormatter().string(from: Date()))
+
+        // 8. Create a forkPoint snapshot in child (empty diff, seq 0 equivalent)
+        let dmp = DiffMatchPatch()
+        let emptyPatch = dmp.patchToText(patches: [])
+        let emptyData = (emptyPatch.isEmpty ? " " : emptyPatch).data(using: .utf8)!
+        let compressed = try (emptyData as NSData).compressed(using: .zlib) as Data
+        _ = try childStore.insertSnapshot(
+            type: "forkPoint",
+            editSummary: nil,
+            diffData: compressed,
+            lengthBefore: content.utf8.count,
+            lengthAfter: content.utf8.count
+        )
+
+        // 9. Switch to child document
+        parentStore.close()
+        self.fileStore = childStore
+        self.snapshotManager = SnapshotManager(fileStore: childStore)
+        self.fileUUID = childUUID
+        self.lastSavedContent = content
+        updateTabState()
     }
 
     // MARK: - Change Tracking
