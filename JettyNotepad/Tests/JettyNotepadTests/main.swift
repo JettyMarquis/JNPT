@@ -68,6 +68,7 @@ print("=== JettyNotepad Test Suite ===\n")
 // Phase 4-5 tests
 runMarkdownTests()
 runSpellCheckExportTests()
+runAITests()
 
 // Phase 1 tests
 runSQLiteDatabaseTests()

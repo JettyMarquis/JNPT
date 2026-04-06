@@ -129,6 +129,17 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         historyItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(historyItem)
 
+        // Tools menu
+        let toolsMenu = NSMenu(title: "Tools")
+        let toolsMenuItem = NSMenuItem()
+        toolsMenuItem.submenu = toolsMenu
+        mainMenu.addItem(toolsMenuItem)
+
+        let aiItem = NSMenuItem(title: "AI Assistant",
+                                 action: #selector(showAIPanel(_:)), keyEquivalent: "A")
+        aiItem.keyEquivalentModifierMask = [.command, .shift]
+        toolsMenu.addItem(aiItem)
+
         // Format menu
         let formatMenu = NSMenu(title: "Format")
         let formatMenuItem = NSMenuItem()
@@ -175,6 +186,15 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
         historyPanel = HistoryPanelController(document: doc)
         historyPanel?.showWindow(sender)
+    }
+
+    private var aiPanelWC: AIPanelController?
+
+    @objc func showAIPanel(_ sender: Any?) {
+        if aiPanelWC == nil {
+            aiPanelWC = AIPanelController()
+        }
+        aiPanelWC?.showWindow(sender)
     }
 
     private var preferencesWC: PreferencesWindowController?

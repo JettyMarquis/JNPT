@@ -34,6 +34,11 @@ struct PreferencesView: View {
     @AppStorage("autoCorrectEnabled")     private var autoCorrectEnabled     = false
     @AppStorage("grammarCheckEnabled")    private var grammarCheckEnabled    = false
 
+    @AppStorage("aiProvider")     private var aiProviderRaw:  String = AIProvider.disabled.rawValue
+    @AppStorage("localModelPath") private var localModelPath: String = ""
+    @AppStorage("aiTemperature")  private var aiTemperature:  Double = 0.7
+    @AppStorage("aiMaxTokens")    private var aiMaxTokensStr: String = "512"
+
     var body: some View {
         TabView {
             generalTab
@@ -42,9 +47,63 @@ struct PreferencesView: View {
                 .tabItem { Label("History", systemImage: "clock") }
             editorTab
                 .tabItem { Label("Editor", systemImage: "pencil") }
+            aiTab
+                .tabItem { Label("AI", systemImage: "cpu") }
         }
         .padding(20)
-        .frame(width: 430, height: 360)
+        .frame(width: 430, height: 380)
+    }
+
+    private var aiTab: some View {
+        Form {
+            Section("Provider") {
+                Picker("AI Provider:", selection: $aiProviderRaw) {
+                    ForEach(AIProvider.allCases, id: \.rawValue) { p in
+                        Text(p.rawValue).tag(p.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: aiProviderRaw) { val in
+                    if let p = AIProvider(rawValue: val) {
+                        AIManager.shared.activeProvider = p
+                    }
+                }
+            }
+
+            Section("Local Model") {
+                HStack {
+                    Text(localModelPath.isEmpty ? "No model selected" : localModelPath)
+                        .font(.system(size: 11, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundColor(localModelPath.isEmpty ? .secondary : .primary)
+                    Spacer()
+                    Button("Choose…") { chooseModelFile() }
+                }
+                HStack {
+                    Text("Temperature:")
+                    Slider(value: $aiTemperature, in: 0...2, step: 0.1)
+                    Text(String(format: "%.1f", aiTemperature))
+                        .frame(width: 30)
+                }
+                HStack {
+                    Text("Max tokens:")
+                    TextField("512", text: $aiMaxTokensStr)
+                        .frame(width: 60)
+                }
+            }
+        }
+    }
+
+    private func chooseModelFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Select a local model file (e.g. .gguf)"
+        if panel.runModal() == .OK, let url = panel.url {
+            localModelPath = url.path
+            AIManager.shared.localModel.modelPath = url.path
+        }
     }
 
     private var editorTab: some View {
