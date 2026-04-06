@@ -93,6 +93,8 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
             <string>Plain Text</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
             <key>LSItemContentTypes</key>
             <array>
                 <string>public.plain-text</string>
@@ -107,6 +109,8 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
             <string>Markdown</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
             <key>LSItemContentTypes</key>
             <array>
                 <string>net.daringfireball.markdown</string>
