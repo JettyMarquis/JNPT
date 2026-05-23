@@ -151,21 +151,6 @@ func runJNTFileStoreTests() {
         try assertEqual(try store.snapshotCount(), 1)
     }
 
-    test("add and read child") {
-        let url = URL(fileURLWithPath: NSTemporaryDirectory() + "test_\(UUID().uuidString).jnt")
-        defer { try? FileManager.default.removeItem(at: url) }
-        let store = try JNTFileStore.create(at: url, content: "test", uuid: UUID())
-        defer { store.close() }
-
-        let childUUID = UUID()
-        try store.addChild(uuid: childUUID, path: "/tmp/child.jnt",
-                           forkTimestamp: Date(), forkSeq: 1)
-        let children = try store.readChildren()
-        try assertEqual(children.count, 1)
-        try assertEqual(children[0].childUUID, childUUID)
-        try assertEqual(children[0].childPath, "/tmp/child.jnt")
-    }
-
     test("jnt file uses WAL mode") {
         let url = URL(fileURLWithPath: NSTemporaryDirectory() + "test_\(UUID().uuidString).jnt")
         defer { try? FileManager.default.removeItem(at: url) }

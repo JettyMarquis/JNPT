@@ -49,46 +49,14 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         if let content = document?.content, textView.string != content {
             textView.string = content
         }
-        let defaults = UserDefaults.standard
-        configureSpellCheck(
-            enabled:     defaults.bool(forKey: "spellCheckEnabled"),
-            autoCorrect: defaults.bool(forKey: "autoCorrectEnabled"),
-            grammar:     defaults.bool(forKey: "grammarCheckEnabled")
-        )
-        if defaults.bool(forKey: "markdownDefaultEnabled") {
-            toggleMarkdownRendering(true)
-        }
         view.window?.makeFirstResponder(textView)
     }
 
-    // MARK: - Spell check
-
-    public func configureSpellCheck(enabled: Bool, autoCorrect: Bool, grammar: Bool) {
-        textView.isContinuousSpellCheckingEnabled = enabled
-        textView.isAutomaticSpellingCorrectionEnabled = autoCorrect
-        textView.isGrammarCheckingEnabled = grammar
-    }
-
-    // MARK: - Markdown toggle
-
-    public func toggleMarkdownRendering(_ enabled: Bool) {
-        jntTextStorage?.markdownRenderingEnabled = enabled
-        jntTextStorage?.invalidateAndReapplyStyles()
-    }
-
     // MARK: - NSTextViewDelegate
-
-    private var hasCheckedMidTree = false
 
     public func textDidChange(_ notification: Notification) {
         document?.content = textView.string
         document?.updateChangeCount(.changeDone)
         document?.autoSaveManager.documentContentDidChange()
-
-        // One-time mid-tree edit check per session
-        if !hasCheckedMidTree {
-            hasCheckedMidTree = true
-            document?.checkMidTreeEdit()
-        }
     }
 }

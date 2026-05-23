@@ -52,15 +52,6 @@ public struct JNTSchema {
         """)
 
         try db.execute("""
-            CREATE TABLE IF NOT EXISTS children (
-                child_uuid TEXT PRIMARY KEY,
-                child_path TEXT,
-                fork_timestamp TEXT NOT NULL,
-                fork_snapshot_seq INTEGER
-            );
-        """)
-
-        try db.execute("""
             CREATE TRIGGER IF NOT EXISTS limit_snapshots AFTER INSERT ON snapshots
             BEGIN
                 DELETE FROM snapshots

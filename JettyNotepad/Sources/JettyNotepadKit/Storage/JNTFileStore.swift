@@ -1,5 +1,4 @@
 import Foundation
-import Darwin  // setxattr (sys/xattr.h)
 
 // MARK: - Data Types
 
@@ -19,13 +18,6 @@ public struct SnapshotSummary {
     public let editSummary: String?
     public let contentLengthBefore: Int?
     public let contentLengthAfter: Int?
-}
-
-public struct ChildRecord {
-    public let childUUID: UUID
-    public let childPath: String?
-    public let forkTimestamp: Date
-    public let forkSnapshotSeq: Int?
 }
 
 // MARK: - JNTFileStore
@@ -83,8 +75,6 @@ public class JNTFileStore {
                 params: [.text(displayName)]
             )
         }
-
-        writeSpotlightXattr(at: url, content: content)
 
         // Return a new store pointing at the file we just created
         let store = try JNTFileStore(url: url)
@@ -149,22 +139,6 @@ public class JNTFileStore {
             try writeMetadata(key: "display_name", value: name)
         }
 
-        Self.writeSpotlightXattr(at: url, content: content)
-    }
-
-    // Spotlight: surface document text without needing a separate .mdimporter target.
-    // The com.apple.metadata:* namespace requires the value to be a binary plist,
-    // not raw UTF-8 — otherwise Spotlight silently ignores it.
-    private static func writeSpotlightXattr(at url: URL, content: String) {
-        let key = "com.apple.metadata:kMDItemTextContent"
-        guard let data = try? PropertyListSerialization.data(
-            fromPropertyList: content,
-            format: .binary,
-            options: 0
-        ) else { return }
-        _ = data.withUnsafeBytes { buf in
-            setxattr(url.path, key, buf.baseAddress, buf.count, 0, 0)
-        }
     }
 
     // MARK: - Metadata
@@ -247,38 +221,6 @@ public class JNTFileStore {
     public func snapshotCount() throws -> Int {
         let rows = try db.query("SELECT count(*) as cnt FROM snapshots;")
         return rows.first?["cnt"]?.intValue.map { Int($0) } ?? 0
-    }
-
-    // MARK: - Children (stubs for Phase 3)
-
-    public func addChild(uuid: UUID, path: String, forkTimestamp: Date, forkSeq: Int) throws {
-        try db.executeWithParams(
-            """
-            INSERT INTO children (child_uuid, child_path, fork_timestamp, fork_snapshot_seq)
-            VALUES (?1, ?2, ?3, ?4);
-            """,
-            params: [
-                .text(uuid.uuidString),
-                .text(path),
-                .text(Self.iso8601.string(from: forkTimestamp)),
-                .int(Int64(forkSeq)),
-            ]
-        )
-    }
-
-    public func readChildren() throws -> [ChildRecord] {
-        let rows = try db.query("SELECT * FROM children;")
-        return rows.compactMap { row -> ChildRecord? in
-            guard let uuidStr = row["child_uuid"]?.textValue,
-                  let uuid = UUID(uuidString: uuidStr),
-                  let tsStr = row["fork_timestamp"]?.textValue else { return nil }
-            return ChildRecord(
-                childUUID: uuid,
-                childPath: row["child_path"]?.textValue,
-                forkTimestamp: Self.iso8601.date(from: tsStr) ?? Date(),
-                forkSnapshotSeq: row["fork_snapshot_seq"]?.intValue.map { Int($0) }
-            )
-        }
     }
 
     // MARK: - Helpers

@@ -114,60 +114,6 @@ func runSnapshotManagerTests() {
 func runSaveAsTests() {
     print("\nSaveAsTests:")
 
-    test("Save As creates parent-child link") {
-        let parentURL = URL(fileURLWithPath: NSTemporaryDirectory() + "parent_\(UUID().uuidString).jnt")
-        let childURL = URL(fileURLWithPath: NSTemporaryDirectory() + "child_\(UUID().uuidString).jnt")
-        defer {
-            try? FileManager.default.removeItem(at: parentURL)
-            try? FileManager.default.removeItem(at: childURL)
-        }
-
-        // Create parent
-        let parentUUID = UUID()
-        let parentStore = try JNTFileStore.create(at: parentURL, content: "Parent content", uuid: parentUUID)
-        let parentSM = SnapshotManager(fileStore: parentStore)
-
-        // Simulate a save to create history
-        try parentSM.createSnapshot(previousContent: "Parent content",
-                                    currentContent: "Parent content v2",
-                                    type: "manualSave", editSummary: nil)
-        try parentStore.saveContent("Parent content v2", cursor: 0, scroll: 0)
-
-        // Simulate Save As — create fork point + child
-        try parentSM.createSnapshot(previousContent: "Parent content v2",
-                                    currentContent: "Parent content v2",
-                                    type: "forkPoint", editSummary: nil)
-
-        let parentSnaps = try parentStore.readSnapshotManifest()
-        let forkSeq = parentSnaps.first?.seq ?? 0
-
-        let childUUID = UUID()
-        try parentStore.addChild(uuid: childUUID, path: childURL.path,
-                                 forkTimestamp: Date(), forkSeq: forkSeq)
-
-        // Create child .jnt
-        let childStore = try JNTFileStore.create(at: childURL, content: "Parent content v2", uuid: childUUID)
-        try childStore.writeMetadata(key: "parent_uuid", value: parentUUID.uuidString)
-        try childStore.writeMetadata(key: "parent_path", value: parentURL.path)
-        try childStore.writeMetadata(key: "parent_snapshot_seq", value: "\(forkSeq)")
-
-        // Verify parent has child
-        let children = try parentStore.readChildren()
-        try assertEqual(children.count, 1)
-        try assertEqual(children[0].childUUID, childUUID)
-
-        // Verify child has parent reference
-        let pUUID = try childStore.readMetadata(key: "parent_uuid")
-        try assertEqual(pUUID, parentUUID.uuidString)
-
-        // Verify child content
-        let childContent = try childStore.readContent()
-        try assertEqual(childContent, "Parent content v2")
-
-        parentStore.close()
-        childStore.close()
-    }
-
     test("Save As generates new UUID for child") {
         let parentURL = URL(fileURLWithPath: NSTemporaryDirectory() + "parent2_\(UUID().uuidString).jnt")
         let childURL = URL(fileURLWithPath: NSTemporaryDirectory() + "child2_\(UUID().uuidString).jnt")

@@ -1,126 +1,27 @@
 import AppKit
 import SwiftUI
 
-/// Basic preferences window — SwiftUI content hosted in NSHostingView.
 public class PreferencesWindowController: NSWindowController {
     public convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 450, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 160),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.title = "Preferences"
         window.center()
-
         let hostingView = NSHostingView(rootView: PreferencesView())
         window.contentView = hostingView
-
         self.init(window: window)
     }
 }
 
-// MARK: - SwiftUI Preferences View
-
 struct PreferencesView: View {
-    @State private var autoSaveInterval: Double = 60
-    @State private var newFileOpensIn: Int = 0  // 0 = tab, 1 = window
-    @State private var storageUsed: String = "Calculating..."
-    @State private var orphanRetentionDays: String = "90"
-    @State private var maxCapacityMB: String = ""
-
-    @AppStorage("markdownDefaultEnabled") private var markdownDefaultEnabled = false
-    @AppStorage("spellCheckEnabled")      private var spellCheckEnabled      = false
-    @AppStorage("autoCorrectEnabled")     private var autoCorrectEnabled     = false
-    @AppStorage("grammarCheckEnabled")    private var grammarCheckEnabled    = false
-
-    @AppStorage("aiProvider")     private var aiProviderRaw:  String = AIProvider.disabled.rawValue
-    @AppStorage("localModelPath") private var localModelPath: String = ""
-    @AppStorage("aiTemperature")  private var aiTemperature:  Double = 0.7
-    @AppStorage("aiMaxTokens")    private var aiMaxTokensStr: String = "512"
+    @AppStorage("autoSaveInterval") private var autoSaveInterval: Double = 60
+    @AppStorage("newFileOpensIn")   private var newFileOpensIn: Int = 0
 
     var body: some View {
-        TabView {
-            generalTab
-                .tabItem { Label("General", systemImage: "gear") }
-            historyTab
-                .tabItem { Label("History", systemImage: "clock") }
-            editorTab
-                .tabItem { Label("Editor", systemImage: "pencil") }
-            aiTab
-                .tabItem { Label("AI", systemImage: "cpu") }
-        }
-        .padding(20)
-        .frame(width: 430, height: 380)
-    }
-
-    private var aiTab: some View {
-        Form {
-            Section("Provider") {
-                Picker("AI Provider:", selection: $aiProviderRaw) {
-                    ForEach(AIProvider.allCases, id: \.rawValue) { p in
-                        Text(p.rawValue).tag(p.rawValue)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: aiProviderRaw) { val in
-                    if let p = AIProvider(rawValue: val) {
-                        AIManager.shared.activeProvider = p
-                    }
-                }
-            }
-
-            Section("Local Model") {
-                HStack {
-                    Text(localModelPath.isEmpty ? "No model selected" : localModelPath)
-                        .font(.system(size: 11, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundColor(localModelPath.isEmpty ? .secondary : .primary)
-                    Spacer()
-                    Button("Choose…") { chooseModelFile() }
-                }
-                HStack {
-                    Text("Temperature:")
-                    Slider(value: $aiTemperature, in: 0...2, step: 0.1)
-                    Text(String(format: "%.1f", aiTemperature))
-                        .frame(width: 30)
-                }
-                HStack {
-                    Text("Max tokens:")
-                    TextField("512", text: $aiMaxTokensStr)
-                        .frame(width: 60)
-                }
-            }
-        }
-    }
-
-    private func chooseModelFile() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.message = "Select a local model file (e.g. .gguf)"
-        if panel.runModal() == .OK, let url = panel.url {
-            localModelPath = url.path
-            AIManager.shared.localModel.modelPath = url.path
-        }
-    }
-
-    private var editorTab: some View {
-        Form {
-            Section("Markdown") {
-                Toggle("Enable Markdown rendering for new documents",
-                       isOn: $markdownDefaultEnabled)
-            }
-            Section("Spelling") {
-                Toggle("Check spelling while typing",     isOn: $spellCheckEnabled)
-                Toggle("Correct spelling automatically",  isOn: $autoCorrectEnabled)
-                Toggle("Check grammar with spelling",     isOn: $grammarCheckEnabled)
-            }
-        }
-    }
-
-    private var generalTab: some View {
         Form {
             Section("Auto-Save") {
                 Picker("Interval:", selection: $autoSaveInterval) {
@@ -132,7 +33,6 @@ struct PreferencesView: View {
                 }
                 .pickerStyle(.menu)
             }
-
             Section("New Documents") {
                 Picker("Open in:", selection: $newFileOpensIn) {
                     Text("New Tab").tag(0)
@@ -141,87 +41,7 @@ struct PreferencesView: View {
                 .pickerStyle(.segmented)
             }
         }
-    }
-
-    private var historyTab: some View {
-        Form {
-            Section("JettyNote Folder") {
-                HStack {
-                    Text(ExternalFileManager.jettyNoteFolder.path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                }
-            }
-
-            Section("Storage") {
-                HStack {
-                    Text("Used:")
-                    Text(storageUsed)
-                        .foregroundColor(.secondary)
-                }
-                .onAppear { updateStorageInfo() }
-            }
-
-            Section("Cleanup") {
-                HStack {
-                    Text("Orphan retention (days):")
-                    TextField("90", text: $orphanRetentionDays)
-                        .frame(width: 60)
-                }
-                HStack {
-                    Text("Max capacity (MB):")
-                    TextField("Unlimited", text: $maxCapacityMB)
-                        .frame(width: 80)
-                }
-
-                HStack(spacing: 12) {
-                    Button("Scan for Orphans") { scanOrphans() }
-                    Button("Clean Up...") { cleanup() }
-                    Button("Clear All History...") { clearAll() }
-                        .foregroundColor(.red)
-                }
-            }
-        }
-    }
-
-    private func updateStorageInfo() {
-        DispatchQueue.global().async {
-            let bytes = (try? CleanupManager.totalStorageBytes()) ?? 0
-            let formatted = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-            DispatchQueue.main.async {
-                storageUsed = formatted
-            }
-        }
-    }
-
-    private func scanOrphans() {
-        DispatchQueue.global().async {
-            if let orphans = try? CleanupManager.scanForOrphans() {
-                try? CleanupManager.moveToOrphans(orphans)
-                DispatchQueue.main.async {
-                    updateStorageInfo()
-                }
-            }
-        }
-    }
-
-    private func cleanup() {
-        DispatchQueue.global().async {
-            let days = Int(orphanRetentionDays) ?? 90
-            try? CleanupManager.purgeOldOrphans(olderThanDays: days)
-            if let maxMB = Int(maxCapacityMB), maxMB > 0 {
-                try? CleanupManager.cleanByCapacity(maxBytes: Int64(maxMB) * 1_000_000)
-            }
-            DispatchQueue.main.async { updateStorageInfo() }
-        }
-    }
-
-    private func clearAll() {
-        DispatchQueue.global().async {
-            try? CleanupManager.clearAll()
-            DispatchQueue.main.async { updateStorageInfo() }
-        }
+        .padding(20)
+        .frame(width: 340, height: 140)
     }
 }

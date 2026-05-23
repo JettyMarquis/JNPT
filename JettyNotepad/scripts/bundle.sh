@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# bundle.sh — Package JettyNotepad into a .app bundle
-# Usage: ./scripts/bundle.sh [--release] [--install]
-#   --release   build optimized release binary (default: debug)
-#   --install   ad-hoc sign and copy to /Applications, refresh LaunchServices
+# bundle.sh — Build JettyNotepad and package it into a signed .app bundle.
+# Usage: ./scripts/bundle.sh [--release]
 #
-# Output: build/JettyNotepad.app (always); /Applications/JettyNotepad.app (with --install)
+# Output: build/JettyNotepad.app
+# Run:    open build/JettyNotepad.app
+#         (First launch: right-click → Open to bypass Gatekeeper once)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -17,13 +17,9 @@ MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
 CONFIG="debug"
-INSTALL=false
-for arg in "$@"; do
-    case "$arg" in
-        --release) CONFIG="release" ;;
-        --install) INSTALL=true ;;
-    esac
-done
+if [[ "${1:-}" == "--release" ]]; then
+    CONFIG="release"
+fi
 
 echo "=== Building JettyNotepad ($CONFIG) ==="
 cd "$PROJECT_DIR"
@@ -38,11 +34,8 @@ fi
 echo "=== Creating .app bundle ==="
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES"
-
-# Copy binary
 cp "$BINARY" "$MACOS/JettyNotepad"
 
-# Info.plist
 cat > "$CONTENTS/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,8 +45,6 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>JettyNotepad</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.jettymarquis.jettynotepad</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -89,43 +80,8 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
             <array>
                 <string>jnt</string>
             </array>
-            <key>LSTypeIsPackage</key>
-            <false/>
             <key>NSDocumentClass</key>
             <string>JNTDocument</string>
-        </dict>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Plain Text</string>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>public.plain-text</string>
-            </array>
-            <key>CFBundleTypeExtensions</key>
-            <array>
-                <string>txt</string>
-            </array>
-        </dict>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Markdown</string>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>net.daringfireball.markdown</string>
-            </array>
-            <key>CFBundleTypeExtensions</key>
-            <array>
-                <string>md</string>
-                <string>markdown</string>
-            </array>
         </dict>
     </array>
     <key>UTExportedTypeDeclarations</key>
@@ -153,32 +109,14 @@ cat > "$CONTENTS/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-# PkgInfo
 echo -n "APPL????" > "$CONTENTS/PkgInfo"
-
-# Generate a simple app icon (blue circle with J)
-# Using a minimal .icns isn't trivial without iconutil, so we skip it for now
-# The app will use the default icon
 
 echo "=== Ad-hoc signing ==="
 codesign --force --deep --sign - "$APP_DIR"
 
-if $INSTALL; then
-    DEST="/Applications/JettyNotepad.app"
-    echo "=== Installing to $DEST ==="
-    rsync -a --delete "$APP_DIR/" "$DEST/"
-    /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister \
-        -f "$DEST"
-    echo ""
-    echo "Installed. First launch: right-click → Open (one-time Gatekeeper bypass)."
-fi
-
-echo "=== Done ==="
 echo ""
-echo "  $APP_DIR"
+echo "=== Done: $APP_DIR ==="
 echo ""
-echo "Run with:"
-echo "  open $APP_DIR"
+echo "  open build/JettyNotepad.app"
 echo ""
-echo "Or from terminal:"
-echo "  $MACOS/JettyNotepad"
+echo "  First launch: right-click → Open (one-time Gatekeeper bypass)"

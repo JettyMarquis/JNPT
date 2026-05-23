@@ -22,12 +22,14 @@ JettyNotepad looks and feels like a simple notepad, but under the hood it tracks
 | Diff Engine | diff-match-patch (clean-room) |
 | Target | macOS 13 (Ventura)+ |
 
-## Build
+## Build & Run
 
 ```bash
 cd JettyNotepad
-swift build -c release
-./scripts/bundle.sh --release --install
+./scripts/bundle.sh          # debug build (faster)
+./scripts/bundle.sh --release  # optimised build
+open build/JettyNotepad.app
+# First launch: right-click → Open (one-time Gatekeeper bypass)
 ```
 
 ## Test
