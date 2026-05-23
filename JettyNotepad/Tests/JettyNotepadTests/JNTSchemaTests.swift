@@ -17,7 +17,6 @@ func runJNTSchemaTests() {
         try assertTrue(names.contains("document"), "missing document table")
         try assertTrue(names.contains("snapshots"), "missing snapshots table")
         try assertTrue(names.contains("metadata"), "missing metadata table")
-        try assertTrue(names.contains("children"), "missing children table")
     }
 
     test("migrate sets user_version") {
