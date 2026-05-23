@@ -2,9 +2,11 @@
 set -euo pipefail
 
 # bundle.sh — Package JettyNotepad into a .app bundle
-# Usage: ./scripts/bundle.sh [--release]
+# Usage: ./scripts/bundle.sh [--release] [--install]
+#   --release   build optimized release binary (default: debug)
+#   --install   ad-hoc sign and copy to /Applications, refresh LaunchServices
 #
-# Output: build/JettyNotepad.app
+# Output: build/JettyNotepad.app (always); /Applications/JettyNotepad.app (with --install)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -15,9 +17,13 @@ MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
 CONFIG="debug"
-if [[ "${1:-}" == "--release" ]]; then
-    CONFIG="release"
-fi
+INSTALL=false
+for arg in "$@"; do
+    case "$arg" in
+        --release) CONFIG="release" ;;
+        --install) INSTALL=true ;;
+    esac
+done
 
 echo "=== Building JettyNotepad ($CONFIG) ==="
 cd "$PROJECT_DIR"
@@ -153,6 +159,19 @@ echo -n "APPL????" > "$CONTENTS/PkgInfo"
 # Generate a simple app icon (blue circle with J)
 # Using a minimal .icns isn't trivial without iconutil, so we skip it for now
 # The app will use the default icon
+
+echo "=== Ad-hoc signing ==="
+codesign --force --deep --sign - "$APP_DIR"
+
+if $INSTALL; then
+    DEST="/Applications/JettyNotepad.app"
+    echo "=== Installing to $DEST ==="
+    rsync -a --delete "$APP_DIR/" "$DEST/"
+    /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister \
+        -f "$DEST"
+    echo ""
+    echo "Installed. First launch: right-click → Open (one-time Gatekeeper bypass)."
+fi
 
 echo "=== Done ==="
 echo ""

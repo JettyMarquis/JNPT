@@ -26,14 +26,15 @@ JettyNotepad looks and feels like a simple notepad, but under the hood it tracks
 
 ```bash
 cd JettyNotepad
-xcodebuild -scheme JettyNotepad -configuration Debug build
+swift build -c release
+./scripts/bundle.sh --release --install
 ```
 
 ## Test
 
 ```bash
 cd JettyNotepad
-xcodebuild -scheme JettyNotepad -configuration Debug test
+swift test
 ```
 
 ## Architecture

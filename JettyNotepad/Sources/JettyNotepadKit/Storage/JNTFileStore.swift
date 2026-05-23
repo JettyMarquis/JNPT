@@ -1,4 +1,5 @@
 import Foundation
+import Darwin  // setxattr (sys/xattr.h)
 
 // MARK: - Data Types
 
@@ -83,6 +84,8 @@ public class JNTFileStore {
             )
         }
 
+        writeSpotlightXattr(at: url, content: content)
+
         // Return a new store pointing at the file we just created
         let store = try JNTFileStore(url: url)
         return store
@@ -144,6 +147,23 @@ public class JNTFileStore {
         if let source = try readMetadata(key: "display_name_source"), source == "firstLine" {
             let name = Self.displayNameFromContent(content)
             try writeMetadata(key: "display_name", value: name)
+        }
+
+        Self.writeSpotlightXattr(at: url, content: content)
+    }
+
+    // Spotlight: surface document text without needing a separate .mdimporter target.
+    // The com.apple.metadata:* namespace requires the value to be a binary plist,
+    // not raw UTF-8 — otherwise Spotlight silently ignores it.
+    private static func writeSpotlightXattr(at url: URL, content: String) {
+        let key = "com.apple.metadata:kMDItemTextContent"
+        guard let data = try? PropertyListSerialization.data(
+            fromPropertyList: content,
+            format: .binary,
+            options: 0
+        ) else { return }
+        _ = data.withUnsafeBytes { buf in
+            setxattr(url.path, key, buf.baseAddress, buf.count, 0, 0)
         }
     }
 
