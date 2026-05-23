@@ -49,7 +49,12 @@ public class JNTDocument: NSDocument {
 
     // MARK: - Reading
 
+    public override var fileURL: URL? {
+        didSet { updateTabState() }
+    }
+
     public override func read(from url: URL, ofType typeName: String) throws {
+        fileStore?.close()
         let store = try JNTFileStore(url: url)
         let state = try store.readDocumentState()
         self.fileStore = store
@@ -60,6 +65,13 @@ public class JNTDocument: NSDocument {
            let uuid = UUID(uuidString: uuidStr) {
             self.fileUUID = uuid
         }
+    }
+
+    public override func revert(toContentsOf url: URL, ofType typeName: String) throws {
+        try super.revert(toContentsOf: url, ofType: typeName)
+        editorViewController?.textView.string = content
+        undoManager?.removeAllActions()
+        updateTabState()
     }
 
     // MARK: - Writing
@@ -152,6 +164,8 @@ public class JNTDocument: NSDocument {
         } else {
             name = JNTFileStore.displayNameFromContent(content)
         }
+        // Proxy icon + title-bar rename/move via double-click on title
+        windowControllers.first?.window?.representedURL = fileURL
         tabStateManager?.updateBaseName(name)
         tabStateManager?.setState(content != lastSavedContent ? .modified : .saved)
     }

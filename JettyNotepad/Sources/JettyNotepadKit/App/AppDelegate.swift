@@ -44,12 +44,25 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         fileMenu.addItem(withTitle: "New", action: #selector(NSDocumentController.newDocument(_:)), keyEquivalent: "n")
         fileMenu.addItem(withTitle: "New Tab", action: #selector(newTab(_:)), keyEquivalent: "t")
         fileMenu.addItem(withTitle: "Open...", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
+
+        let recentMenu = NSMenu(title: "Open Recent")
+        let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        recentItem.submenu = recentMenu
+        fileMenu.addItem(recentItem)
+        recentMenu.addItem(.separator())
+        recentMenu.addItem(withTitle: "Clear Menu",
+            action: #selector(NSDocumentController.clearRecentDocuments(_:)),
+            keyEquivalent: "")
+
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
 
         let saveAsItem = NSMenuItem(title: "Save As...", action: #selector(NSDocument.saveAs(_:)), keyEquivalent: "S")
         saveAsItem.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(saveAsItem)
+
+        fileMenu.addItem(withTitle: "Revert to Saved",
+            action: #selector(NSDocument.revertToSaved(_:)), keyEquivalent: "")
 
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
