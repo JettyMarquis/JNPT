@@ -42,6 +42,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(fileMenuItem)
 
         fileMenu.addItem(withTitle: "New", action: #selector(NSDocumentController.newDocument(_:)), keyEquivalent: "n")
+        fileMenu.addItem(withTitle: "New Tab", action: #selector(newTab(_:)), keyEquivalent: "t")
         fileMenu.addItem(withTitle: "Open...", action: #selector(NSDocumentController.openDocument(_:)), keyEquivalent: "o")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
@@ -106,6 +107,23 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Actions
+
+    @objc func newTab(_ sender: Any?) {
+        guard let keyWindow = NSApp.keyWindow else {
+            NSDocumentController.shared.newDocument(sender)
+            return
+        }
+        do {
+            let doc = try NSDocumentController.shared.openUntitledDocumentAndDisplay(false)
+            doc.makeWindowControllers()
+            if let newWindow = doc.windowControllers.first?.window {
+                keyWindow.addTabbedWindow(newWindow, ordered: .above)
+                newWindow.makeKeyAndOrderFront(nil)
+            }
+        } catch {
+            NSDocumentController.shared.newDocument(sender)
+        }
+    }
 
     private var historyPanel: HistoryPanelController?
 

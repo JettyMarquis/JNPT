@@ -10,6 +10,7 @@ public class JNTWindowController: NSWindowController {
         )
         window.center()
         window.tabbingMode = .preferred
+        window.tabbingIdentifier = "com.jettymarquis.jettynotepad"
         window.setFrameAutosaveName("JettyNotepadMainWindow")
         window.title = "Untitled"
         window.minSize = NSSize(width: 400, height: 300)
