@@ -50,24 +50,28 @@ public class JNTTextStorage: NSTextStorage {
 
     // MARK: - Fonts
 
-    public static let baseFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-    private static let codeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    private static let boldFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .bold)
-
-    private static func headingFont(level: Int) -> NSFont {
-        NSFont.systemFont(ofSize: 14 + CGFloat(7 - level) * 2, weight: .bold)
+    public var baseFontSize: CGFloat = 14 {
+        didSet { invalidateAndReapplyStyles() }
     }
 
-    private static func italicFont() -> NSFont {
+    private var baseFont: NSFont { .monospacedSystemFont(ofSize: baseFontSize, weight: .regular) }
+    private var codeFont: NSFont { .monospacedSystemFont(ofSize: max(baseFontSize - 1, 8), weight: .regular) }
+    private var boldFont: NSFont { .monospacedSystemFont(ofSize: baseFontSize, weight: .bold) }
+
+    private func headingFont(level: Int) -> NSFont {
+        .systemFont(ofSize: baseFontSize + CGFloat(7 - level) * 2, weight: .bold)
+    }
+
+    private func italicFont() -> NSFont {
         let desc = baseFont.fontDescriptor.withSymbolicTraits(.italic)
-        return NSFont(descriptor: desc, size: 14) ?? baseFont
+        return NSFont(descriptor: desc, size: baseFontSize) ?? baseFont
     }
 
     // MARK: - Style helpers (operate on backing directly to avoid re-entrant edited calls)
 
     private func resetAttributes(in range: NSRange) {
         backing.setAttributes([
-            .font: JNTTextStorage.baseFont,
+            .font: baseFont,
             .foregroundColor: NSColor.textColor
         ], range: range)
         backing.removeAttribute(.backgroundColor, range: range)
@@ -108,7 +112,7 @@ public class JNTTextStorage: NSTextStorage {
         for match in regex.matches(in: str, range: full) {
             let lineRange = nsStr.lineRange(for: match.range)
             let level = min(nsStr.substring(with: match.range(at: 1)).count, 6)
-            backing.addAttributes([.font: JNTTextStorage.headingFont(level: level)], range: lineRange)
+            backing.addAttributes([.font: headingFont(level: level)], range: lineRange)
         }
     }
 
@@ -118,7 +122,7 @@ public class JNTTextStorage: NSTextStorage {
         let nsStr = str as NSString
         let full = NSRange(location: 0, length: nsStr.length)
         for match in regex.matches(in: str, range: full) {
-            backing.addAttributes([.font: JNTTextStorage.boldFont], range: match.range)
+            backing.addAttributes([.font: boldFont], range: match.range)
         }
     }
 
@@ -133,7 +137,7 @@ public class JNTTextStorage: NSTextStorage {
             let existingFont = backing.attribute(.font, at: match.range.location,
                                                  effectiveRange: nil) as? NSFont
             if existingFont?.fontDescriptor.symbolicTraits.contains(.bold) != true {
-                backing.addAttributes([.font: JNTTextStorage.italicFont()], range: match.range)
+                backing.addAttributes([.font: italicFont()], range: match.range)
             }
         }
     }
@@ -156,7 +160,7 @@ public class JNTTextStorage: NSTextStorage {
         let full = NSRange(location: 0, length: nsStr.length)
         for match in regex.matches(in: str, range: full) {
             backing.addAttributes([
-                .font: JNTTextStorage.codeFont,
+                .font: codeFont,
                 .backgroundColor: NSColor.quaternaryLabelColor
             ], range: match.range)
         }

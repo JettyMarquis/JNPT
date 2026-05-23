@@ -5,6 +5,17 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
     public weak var document: JNTDocument?
     public private(set) var jntTextStorage: JNTTextStorage?
 
+    private static let defaultFontSize: CGFloat = 28
+    private static let fontSizeKey = "editorFontSize"
+    private static let fontSizeStep: CGFloat = 2
+    private static let fontSizeMin: CGFloat = 8
+    private static let fontSizeMax: CGFloat = 72
+
+    private var currentFontSize: CGFloat {
+        let v = UserDefaults.standard.double(forKey: Self.fontSizeKey)
+        return v > 0 ? CGFloat(v) : Self.defaultFontSize
+    }
+
     public override func loadView() {
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         scrollView.hasVerticalScroller = true
@@ -27,7 +38,8 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
 
         textView = NSTextView(frame: NSRect(origin: .zero, size: contentSize), textContainer: textContainer)
         textView.isRichText = false
-        textView.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
+        textView.font = .monospacedSystemFont(ofSize: currentFontSize, weight: .regular)
+        storage.baseFontSize = currentFontSize
         textView.textContainerInset = NSSize(width: 16, height: 16)
         textView.allowsUndo = true
         textView.undoManager?.levelsOfUndo = 100
@@ -50,6 +62,22 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
             textView.string = content
         }
         view.window?.makeFirstResponder(textView)
+    }
+
+    // MARK: - Font size
+
+    @objc public func increaseFontSize(_ sender: Any?) {
+        applyFontSize(min(currentFontSize + Self.fontSizeStep, Self.fontSizeMax))
+    }
+
+    @objc public func decreaseFontSize(_ sender: Any?) {
+        applyFontSize(max(currentFontSize - Self.fontSizeStep, Self.fontSizeMin))
+    }
+
+    private func applyFontSize(_ size: CGFloat) {
+        UserDefaults.standard.set(Double(size), forKey: Self.fontSizeKey)
+        textView.font = .monospacedSystemFont(ofSize: size, weight: .regular)
+        jntTextStorage?.baseFontSize = size
     }
 
     // MARK: - NSTextViewDelegate

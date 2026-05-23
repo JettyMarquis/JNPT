@@ -99,6 +99,12 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         historyItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(historyItem)
 
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(withTitle: "Increase Font Size",
+            action: #selector(EditorViewController.increaseFontSize(_:)), keyEquivalent: "+")
+        viewMenu.addItem(withTitle: "Decrease Font Size",
+            action: #selector(EditorViewController.decreaseFontSize(_:)), keyEquivalent: "-")
+
         // Window menu
         let windowMenu = NSMenu(title: "Window")
         let windowMenuItem = NSMenuItem()

@@ -47,7 +47,7 @@ func runMarkdownTests() {
         let ts = makeStorage(text: "# Title Here", markdown: true)
         let font = ts.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
         try assertNotNil(font)
-        try assertGreaterThan(font!.pointSize, JNTTextStorage.baseFont.pointSize)
+        try assertGreaterThan(font!.pointSize, ts.baseFontSize)
     }
 
     test("Markdown enabled: ## Heading 2 smaller than # Heading 1") {
