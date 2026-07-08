@@ -27,83 +27,58 @@ public class SnapshotManager {
         )
     }
 
+    /// Untrusted .jnt files can carry a crafted zlib stream that expands enormously;
+    /// bound decompression to a small multiple of the recorded pre-compression length
+    /// so a malicious/corrupt blob can't exhaust memory.
+    private static let decompressionSlack = 4
+    private static let decompressionHardCap = 50 * 1024 * 1024 // 50MB
+
     /// Reconstruct content at a given snapshot sequence number.
     /// Walks backward from current content applying reverse diffs.
+    /// `seq > targetSeq` (not `>=`): the selected snapshot's own reverse diff is
+    /// excluded, so the result is the content AS SAVED AT that snapshot, not the
+    /// content immediately before it.
     public func reconstructContent(at targetSeq: Int, currentContent: String) throws -> String {
         let manifest = try fileStore.readSnapshotManifest() // sorted desc by seq
         var result = currentContent
 
         for summary in manifest {
-            guard summary.seq >= targetSeq else { break }
+            guard summary.seq > targetSeq else { break }
             let compressed = try fileStore.readSnapshotDiff(seq: summary.seq)
-            let decompressed = try (compressed as NSData).decompressed(using: .zlib) as Data
+            let expectedLength = max(summary.contentLengthBefore ?? 0, summary.contentLengthAfter ?? 0)
+            let sizeCap = max(expectedLength * Self.decompressionSlack, 4096)
+            let decompressed = try decompress(compressed, sizeCap: min(sizeCap, Self.decompressionHardCap),
+                                              seq: summary.seq)
             guard let patchText = String(data: decompressed, encoding: .utf8) else {
                 throw SnapshotError.corruptedDiff(summary.seq)
             }
             let patches = try dmp.patchFromText(patchText)
-            let (applied, _) = dmp.patchApply(patches: patches, text: result)
+            let (applied, successFlags) = dmp.patchApply(patches: patches, text: result)
+            guard successFlags.allSatisfy({ $0 }) else {
+                throw SnapshotError.corruptedDiff(summary.seq)
+            }
             result = applied
         }
 
         return result
     }
 
-    /// Smart eviction when snapshot count exceeds 100.
-    /// Priority: merge adjacent autoSaves within 2min, thin >7d autoSaves, thin >30d.
-    /// Never evict: manualSave, forkPoint.
-    public func evictIfNeeded() throws {
-        let count = try fileStore.snapshotCount()
-        guard count > 100 else { return }
-
-        let manifest = try fileStore.readSnapshotManifest()
-        let now = Date()
-
-        // Find autoSave snapshots eligible for eviction
-        var toEvict: [Int] = []
-
-        // Pass 1: merge adjacent autoSaves within 2 minutes of each other
-        let autoSaves = manifest.filter { $0.snapshotType == "autoSave" }
-        for i in 0..<(autoSaves.count - 1) {
-            let current = autoSaves[i]
-            let next = autoSaves[i + 1]
-            if abs(current.timestamp.timeIntervalSince(next.timestamp)) < 120 {
-                toEvict.append(next.seq) // Keep the newer one, evict older
-            }
-            if count - toEvict.count <= 100 { break }
+    private func decompress(_ compressed: Data, sizeCap: Int, seq: Int) throws -> Data {
+        let decompressed = try (compressed as NSData).decompressed(using: .zlib) as Data
+        guard decompressed.count <= sizeCap else {
+            throw SnapshotError.corruptedDiff(seq)
         }
-
-        // Pass 2: thin autoSaves older than 7 days (keep every other one)
-        if count - toEvict.count > 100 {
-            let oldAutoSaves = autoSaves.filter {
-                now.timeIntervalSince($0.timestamp) > 7 * 86400
-                && !toEvict.contains($0.seq)
-            }
-            for (i, snap) in oldAutoSaves.enumerated() {
-                if i % 2 == 1 { toEvict.append(snap.seq) }
-                if count - toEvict.count <= 100 { break }
-            }
-        }
-
-        // Pass 3: thin autoSaves older than 30 days more aggressively (keep every 3rd)
-        if count - toEvict.count > 100 {
-            let veryOldAutoSaves = autoSaves.filter {
-                now.timeIntervalSince($0.timestamp) > 30 * 86400
-                && !toEvict.contains($0.seq)
-            }
-            for (i, snap) in veryOldAutoSaves.enumerated() {
-                if i % 3 != 0 { toEvict.append(snap.seq) }
-                if count - toEvict.count <= 100 { break }
-            }
-        }
-
-        // Delete evicted snapshots
-        for seq in toEvict {
-            try fileStore.db.executeWithParams(
-                "DELETE FROM snapshots WHERE seq = ?1;",
-                params: [.int(Int64(seq))]
-            )
-        }
+        return decompressed
     }
+
+    // Eviction at the 100-snapshot cap is enforced solely by the `limit_snapshots`
+    // SQLite trigger (FIFO by seq — see JNTSchema.swift). It does not distinguish
+    // snapshot_type, so manualSave/forkPoint rows are NOT protected once a document
+    // exceeds 100 snapshots: this is an accepted MVP limitation. Type-aware
+    // protection requires merging an evicted snapshot's diff into its surviving
+    // neighbor so the reverse-diff chain stays contiguous — skipping deletion by
+    // type alone punches a hole in the chain and makes the "protected" snapshot
+    // unreconstructable. That merge is deferred to Phase 2.5.
 }
 
 public enum SnapshotError: Error, LocalizedError {

@@ -26,12 +26,15 @@ public class HistoryPanelController: NSWindowController {
         previewVC = HistoryPreviewViewController()
 
         timelineVC.onSelect = { [weak self] snapshot, reconstructed in
+            // Preview and restore must reconstruct against the same baseline
+            // (lastSavedContent, not the possibly-unsaved live buffer) so what the
+            // user previews is exactly what they'd get by restoring.
             self?.previewVC.showContent(reconstructed, snapshot: snapshot,
-                                        currentContent: document.content)
+                                        currentContent: document.lastSavedContent)
         }
 
-        timelineVC.onBranchFromHere = { [weak self] snapshot, reconstructed in
-            self?.branchFromSnapshot(snapshot, content: reconstructed)
+        timelineVC.onRestore = { [weak self] snapshot, reconstructed in
+            self?.restoreSnapshot(snapshot, content: reconstructed)
         }
 
         let timelineItem = NSSplitViewItem(contentListWithViewController: timelineVC)
@@ -48,19 +51,33 @@ public class HistoryPanelController: NSWindowController {
         window.contentViewController = splitVC
     }
 
-    private func branchFromSnapshot(_ snapshot: SnapshotSummary, content: String) {
-        guard let doc = jntDocument else { return }
-        // Set the content to the reconstructed version, then trigger Save As
-        doc.content = content
-        doc.editorViewController?.textView.string = content
-        doc.updateChangeCount(.changeDone)
-        // Trigger Save As panel
-        NSDocumentController.shared.currentDocument?.runModalSavePanel(
-            for: .saveAsOperation,
-            delegate: nil,
-            didSave: nil,
-            contextInfo: nil
-        )
+    private func restoreSnapshot(_ snapshot: SnapshotSummary, content: String) {
+        guard let doc = jntDocument,
+              let textView = doc.editorViewController?.textView,
+              let textStorage = textView.textStorage else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Restore This Version?"
+        var info = "This replaces the current document content with the version saved at this point. You can undo it afterward."
+        if doc.content != doc.lastSavedContent {
+            info += " Any unsaved changes will be discarded."
+        }
+        alert.informativeText = info
+        alert.addButton(withTitle: "Restore")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // Replace via the text system (not `textView.string =`) so the change is
+        // undoable as a single step and fires textDidChange to keep document.content
+        // in sync. The range must be the OLD content's length (NSTextStorage's
+        // UTF-16 length, not Swift String.count) — using the new content's length
+        // would go out of bounds.
+        let oldFullRange = NSRange(location: 0, length: textStorage.length)
+        guard textView.shouldChangeText(in: oldFullRange, replacementString: content) else { return }
+        textStorage.replaceCharacters(in: oldFullRange, with: content)
+        textView.didChangeText()
+
+        timelineVC.reload()
     }
 }
 
@@ -71,7 +88,7 @@ public class HistoryTimelineViewController: NSViewController, NSTableViewDataSou
     private var tableView: NSTableView!
     private var snapshots: [SnapshotSummary] = []
     var onSelect: ((SnapshotSummary, String) -> Void)?
-    var onBranchFromHere: ((SnapshotSummary, String) -> Void)?
+    var onRestore: ((SnapshotSummary, String) -> Void)?
 
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -104,25 +121,24 @@ public class HistoryTimelineViewController: NSViewController, NSTableViewDataSou
 
         scrollView.documentView = tableView
 
-        // Branch button at bottom
-        let branchButton = NSButton(title: "Branch From Selected", target: self,
-                                    action: #selector(branchAction))
-        branchButton.translatesAutoresizingMaskIntoConstraints = false
+        let restoreButton = NSButton(title: "Restore This Version", target: self,
+                                     action: #selector(restoreAction))
+        restoreButton.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 600))
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(scrollView)
-        container.addSubview(branchButton)
+        container.addSubview(restoreButton)
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: container.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: branchButton.topAnchor, constant: -8),
-            branchButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            branchButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
-            branchButton.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
-            branchButton.heightAnchor.constraint(equalToConstant: 30),
+            scrollView.bottomAnchor.constraint(equalTo: restoreButton.topAnchor, constant: -8),
+            restoreButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            restoreButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            restoreButton.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+            restoreButton.heightAnchor.constraint(equalToConstant: 30),
         ])
 
         self.view = container
@@ -192,19 +208,19 @@ public class HistoryTimelineViewController: NSViewController, NSTableViewDataSou
         guard let doc = document,
               let sm = doc.snapshotManager else { return }
 
-        if let content = try? sm.reconstructContent(at: snap.seq, currentContent: doc.content) {
+        if let content = try? sm.reconstructContent(at: snap.seq, currentContent: doc.lastSavedContent) {
             onSelect?(snap, content)
         }
     }
 
-    @objc private func branchAction() {
+    @objc private func restoreAction() {
         let row = tableView.selectedRow
         guard row >= 0 && row < snapshots.count else { return }
         let snap = snapshots[row]
         guard let doc = document,
               let sm = doc.snapshotManager,
-              let content = try? sm.reconstructContent(at: snap.seq, currentContent: doc.content) else { return }
-        onBranchFromHere?(snap, content)
+              let content = try? sm.reconstructContent(at: snap.seq, currentContent: doc.lastSavedContent) else { return }
+        onRestore?(snap, content)
     }
 
     private func typeLabel(_ type: String) -> String {

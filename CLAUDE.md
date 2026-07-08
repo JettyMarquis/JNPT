@@ -46,3 +46,4 @@ See docs/ARCHITECTURE.md
 8. Zero third-party dependencies in Phase 1-4.
 9. Phase 5 AI uses `#if canImport(FoundationModels)` + `#available(macOS 26, *)` for Apple Intelligence.
 10. AI panel is SwiftUI via NSHostingView (same pattern as Preferences).
+11. Snapshot eviction at the 100-cap is pure FIFO (oldest `seq` first, all types) — `manualSave`/`forkPoint` are NOT protected in the MVP. Type-aware protection requires diff-merging to keep the reverse-diff chain intact (see ARCHITECTURE.md §4.3); deferred to Phase 2.5.

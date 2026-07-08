@@ -1,5 +1,11 @@
 import AppKit
 
+/// Phase 4 component — Markdown inline rendering. NOT wired into the live editor
+/// (see EditorViewController, which uses a plain NSTextStorage): this class's
+/// full-document `processEditing()` invalidation caused visible line jumps and
+/// scrambled IME composition when it was live-wired. Kept here, still unit-tested
+/// (MarkdownTests.swift), for a future Markdown-rendering feature that fixes that
+/// invalidation strategy (per-edited-line, not whole-document) before re-wiring.
 public class JNTTextStorage: NSTextStorage {
     private let backing = NSMutableAttributedString()
     public var markdownRenderingEnabled = false

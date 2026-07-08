@@ -3,7 +3,7 @@ import AppKit
 public class EditorViewController: NSViewController, NSTextViewDelegate {
     public var textView: NSTextView!
     public weak var document: JNTDocument?
-    public private(set) var jntTextStorage: JNTTextStorage?
+    private var didApplyRestoredState = false
 
     private static let defaultFontSize: CGFloat = 28
     private static let fontSizeKey = "editorFontSize"
@@ -23,9 +23,7 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         scrollView.autoresizingMask = [.width, .height]
 
         let contentSize = scrollView.contentSize
-        let storage = JNTTextStorage()
-        self.jntTextStorage = storage
-        let textStorage: NSTextStorage = storage
+        let textStorage = NSTextStorage()
         let layoutManager = NSLayoutManager()
         textStorage.addLayoutManager(layoutManager)
 
@@ -39,7 +37,6 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         textView = NSTextView(frame: NSRect(origin: .zero, size: contentSize), textContainer: textContainer)
         textView.isRichText = false
         textView.font = .monospacedSystemFont(ofSize: currentFontSize, weight: .regular)
-        storage.baseFontSize = currentFontSize
         textView.textContainerInset = NSSize(width: 16, height: 16)
         textView.allowsUndo = true
         textView.undoManager?.levelsOfUndo = 100
@@ -50,6 +47,8 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.delegate = self
 
         scrollView.documentView = textView
@@ -61,7 +60,28 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         if let content = document?.content, textView.string != content {
             textView.string = content
         }
+        // Only on the very first appearance (document just opened) — otherwise
+        // switching tabs would yank the cursor/scroll back on every appear. Must
+        // run after the string is set above: applying to stale (pre-content) text
+        // would compute against the wrong length.
+        if !didApplyRestoredState {
+            didApplyRestoredState = true
+            applyRestoredCursorAndScroll()
+        }
         view.window?.makeFirstResponder(textView)
+    }
+
+    private func applyRestoredCursorAndScroll() {
+        guard let doc = document else { return }
+        let length = (textView.string as NSString).length
+        if let cursor = doc.restoredCursor {
+            let clamped = min(max(cursor, 0), length)
+            textView.setSelectedRange(NSRange(location: clamped, length: 0))
+        }
+        if let scroll = doc.restoredScroll, let scrollView = textView.enclosingScrollView {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(scroll, 0)))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     // MARK: - Font size
@@ -76,8 +96,13 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
 
     private func applyFontSize(_ size: CGFloat) {
         UserDefaults.standard.set(Double(size), forKey: Self.fontSizeKey)
-        textView.font = .monospacedSystemFont(ofSize: size, weight: .regular)
-        jntTextStorage?.baseFontSize = size
+        // Applying a font change while the user is mid-IME-composition would touch
+        // the marked-text range and disrupt composition — the same bug class this
+        // editor rebuild fixes. Defer until composition ends.
+        guard !textView.hasMarkedText() else { return }
+        let newFont = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        textView.font = newFont
+        textView.typingAttributes[.font] = newFont
     }
 
     // MARK: - NSTextViewDelegate

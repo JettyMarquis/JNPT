@@ -37,6 +37,7 @@ public enum SQLiteError: Error, LocalizedError {
     case prepareFailed(String)
     case bindFailed(Int)
     case databaseClosed
+    case integrityCheckFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -45,6 +46,7 @@ public enum SQLiteError: Error, LocalizedError {
         case .prepareFailed(let msg): return "SQLite prepare failed: \(msg)"
         case .bindFailed(let idx): return "SQLite bind failed at index \(idx)"
         case .databaseClosed: return "Database is closed"
+        case .integrityCheckFailed(let detail): return "File failed integrity check: \(detail)"
         }
     }
 }
@@ -61,8 +63,24 @@ public class SQLiteDatabase {
             throw SQLiteError.openFailed(msg)
         }
         self.db = opened
+        do {
+            try checkIntegrity()
+        } catch {
+            close()
+            throw error
+        }
         try execute("PRAGMA journal_mode=WAL;")
         try execute("PRAGMA foreign_keys=ON;")
+    }
+
+    /// Untrusted files (opened from disk) must pass this before any write (e.g. WAL mode)
+    /// touches them, so a malformed file is never mutated before being judged safe.
+    private func checkIntegrity() throws {
+        let rows = try query("PRAGMA integrity_check;")
+        let result = rows.first?["integrity_check"]?.textValue
+        guard result == "ok" else {
+            throw SQLiteError.integrityCheckFailed(result ?? "unknown")
+        }
     }
 
     deinit {

@@ -12,13 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
-
+      # Pure Swift Package Manager project — no .xcodeproj/.xcworkspace exists,
+      # so `xcodebuild -scheme JettyNotepad` has no scheme to find and fails
+      # immediately. Tests are a custom executable target (JettyNotepadTests),
+      # not XCTest, so `swift test` doesn't apply either.
       - name: Build
         working-directory: JettyNotepad
-        run: xcodebuild -scheme JettyNotepad -configuration Debug -destination 'platform=macOS' build
+        run: swift build
 
       - name: Test
         working-directory: JettyNotepad
-        run: xcodebuild -scheme JettyNotepad -configuration Debug -destination 'platform=macOS' test
+        run: swift run JettyNotepadTests
