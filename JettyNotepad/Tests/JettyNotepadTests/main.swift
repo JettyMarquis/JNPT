@@ -40,5 +40,6 @@ runAutoSaveManagerTests()
 runDiffMatchPatchTests()
 runSnapshotManagerTests()
 runSaveAsTests()
+runHistoryRestoreTests()
 
 printSummary()
