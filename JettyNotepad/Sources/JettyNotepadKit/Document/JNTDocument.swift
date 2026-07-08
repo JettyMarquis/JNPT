@@ -10,6 +10,12 @@ public class JNTDocument: NSDocument {
     private var tabStateManager: TabStateManager?
     private var isManualSave = false
 
+    /// Cursor/scroll to apply once the editor mounts — from the .jnt file's last
+    /// saved position (set in read(from:)), then possibly overridden by more
+    /// recent in-session state from window restoration (see restoreState(with:)).
+    public var restoredCursor: Int?
+    public var restoredScroll: Double?
+
     // MARK: - NSDocument Overrides
 
     public override class var autosavesInPlace: Bool { true }
@@ -64,6 +70,8 @@ public class JNTDocument: NSDocument {
         self.snapshotManager = SnapshotManager(fileStore: store)
         self.content = state.content
         self.lastSavedContent = state.content
+        self.restoredCursor = state.cursorPosition
+        self.restoredScroll = state.scrollPosition
         if let uuidStr = try store.readMetadata(key: "file_uuid"),
            let uuid = UUID(uuidString: uuidStr) {
             self.fileUUID = uuid
@@ -151,12 +159,20 @@ public class JNTDocument: NSDocument {
         coder.encode(content, forKey: "jnt.unsavedContent")
         let cursorPos = editorViewController?.textView.selectedRange().location ?? 0
         coder.encode(cursorPos, forKey: "jnt.cursorPos")
+        let scrollY = editorViewController?.textView.enclosingScrollView?.contentView.bounds.origin.y ?? 0
+        coder.encode(Double(scrollY), forKey: "jnt.scrollPos")
     }
 
     public override func restoreState(with coder: NSCoder) {
         super.restoreState(with: coder)
         if let restored = coder.decodeObject(forKey: "jnt.unsavedContent") as? String {
             content = restored
+        }
+        if coder.containsValue(forKey: "jnt.cursorPos") {
+            restoredCursor = coder.decodeInteger(forKey: "jnt.cursorPos")
+        }
+        if coder.containsValue(forKey: "jnt.scrollPos") {
+            restoredScroll = coder.decodeDouble(forKey: "jnt.scrollPos")
         }
     }
 

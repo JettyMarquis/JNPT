@@ -3,6 +3,7 @@ import AppKit
 public class EditorViewController: NSViewController, NSTextViewDelegate {
     public var textView: NSTextView!
     public weak var document: JNTDocument?
+    private var didApplyRestoredState = false
 
     private static let defaultFontSize: CGFloat = 28
     private static let fontSizeKey = "editorFontSize"
@@ -59,7 +60,28 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         if let content = document?.content, textView.string != content {
             textView.string = content
         }
+        // Only on the very first appearance (document just opened) — otherwise
+        // switching tabs would yank the cursor/scroll back on every appear. Must
+        // run after the string is set above: applying to stale (pre-content) text
+        // would compute against the wrong length.
+        if !didApplyRestoredState {
+            didApplyRestoredState = true
+            applyRestoredCursorAndScroll()
+        }
         view.window?.makeFirstResponder(textView)
+    }
+
+    private func applyRestoredCursorAndScroll() {
+        guard let doc = document else { return }
+        let length = (textView.string as NSString).length
+        if let cursor = doc.restoredCursor {
+            let clamped = min(max(cursor, 0), length)
+            textView.setSelectedRange(NSRange(location: clamped, length: 0))
+        }
+        if let scroll = doc.restoredScroll, let scrollView = textView.enclosingScrollView {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(scroll, 0)))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     // MARK: - Font size
