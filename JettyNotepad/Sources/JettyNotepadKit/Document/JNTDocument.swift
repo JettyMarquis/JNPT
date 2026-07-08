@@ -30,7 +30,6 @@ public class JNTDocument: NSDocument {
     public override init() {
         super.init()
         autoSaveManager.document = self
-        autoSaveManager.start()
     }
 
     // MARK: - Window Controllers
@@ -45,6 +44,10 @@ public class JNTDocument: NSDocument {
             tabStateManager = TabStateManager(window: window)
             updateTabState()
         }
+        // Started here (not init) so the editor/window exist before the first
+        // possible autosave fire — an autosave before the editor mounts would
+        // persist cursor=0/scroll=0, discarding restored session state.
+        autoSaveManager.start(interval: AutoSaveManager.configuredInterval())
     }
 
     // MARK: - Reading
@@ -90,22 +93,28 @@ public class JNTDocument: NSDocument {
             snapshotManager = SnapshotManager(fileStore: newStore)
             fileUUID = newUUID
         } else {
-            // Regular save — snapshot if content changed
-            if content != lastSavedContent {
-                let snapshotType = isManualSave ? "manualSave" : "autoSave"
-                try snapshotManager?.createSnapshot(
-                    previousContent: lastSavedContent,
-                    currentContent: content,
-                    type: snapshotType,
-                    editSummary: nil
+            // Regular save — snapshot if content changed. The snapshot insert and
+            // content update must commit atomically: a crash between them would
+            // leave a snapshot whose reverse diff assumes content that was never
+            // persisted, corrupting the chain on reconstruction. The 100-snapshot
+            // cap is enforced solely by the `limit_snapshots` SQLite trigger (FIFO
+            // by seq) — see JNTSchema.swift.
+            try fileStore!.db.inTransaction {
+                if content != lastSavedContent {
+                    let snapshotType = isManualSave ? "manualSave" : "autoSave"
+                    try snapshotManager?.createSnapshot(
+                        previousContent: lastSavedContent,
+                        currentContent: content,
+                        type: snapshotType,
+                        editSummary: nil
+                    )
+                }
+                try fileStore!.saveContent(
+                    content,
+                    cursor: editorViewController?.textView.selectedRange().location ?? 0,
+                    scroll: Double(editorViewController?.textView.enclosingScrollView?.contentView.bounds.origin.y ?? 0)
                 )
-                try snapshotManager?.evictIfNeeded()
             }
-            try fileStore!.saveContent(
-                content,
-                cursor: editorViewController?.textView.selectedRange().location ?? 0,
-                scroll: Double(editorViewController?.textView.enclosingScrollView?.contentView.bounds.origin.y ?? 0)
-            )
         }
         lastSavedContent = content
         isManualSave = false

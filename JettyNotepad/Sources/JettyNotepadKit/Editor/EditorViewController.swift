@@ -3,7 +3,6 @@ import AppKit
 public class EditorViewController: NSViewController, NSTextViewDelegate {
     public var textView: NSTextView!
     public weak var document: JNTDocument?
-    public private(set) var jntTextStorage: JNTTextStorage?
 
     private static let defaultFontSize: CGFloat = 28
     private static let fontSizeKey = "editorFontSize"
@@ -23,9 +22,7 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         scrollView.autoresizingMask = [.width, .height]
 
         let contentSize = scrollView.contentSize
-        let storage = JNTTextStorage()
-        self.jntTextStorage = storage
-        let textStorage: NSTextStorage = storage
+        let textStorage = NSTextStorage()
         let layoutManager = NSLayoutManager()
         textStorage.addLayoutManager(layoutManager)
 
@@ -39,7 +36,6 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         textView = NSTextView(frame: NSRect(origin: .zero, size: contentSize), textContainer: textContainer)
         textView.isRichText = false
         textView.font = .monospacedSystemFont(ofSize: currentFontSize, weight: .regular)
-        storage.baseFontSize = currentFontSize
         textView.textContainerInset = NSSize(width: 16, height: 16)
         textView.allowsUndo = true
         textView.undoManager?.levelsOfUndo = 100
@@ -50,6 +46,8 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.delegate = self
 
         scrollView.documentView = textView
@@ -76,8 +74,13 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
 
     private func applyFontSize(_ size: CGFloat) {
         UserDefaults.standard.set(Double(size), forKey: Self.fontSizeKey)
-        textView.font = .monospacedSystemFont(ofSize: size, weight: .regular)
-        jntTextStorage?.baseFontSize = size
+        // Applying a font change while the user is mid-IME-composition would touch
+        // the marked-text range and disrupt composition — the same bug class this
+        // editor rebuild fixes. Defer until composition ends.
+        guard !textView.hasMarkedText() else { return }
+        let newFont = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        textView.font = newFont
+        textView.typingAttributes[.font] = newFont
     }
 
     // MARK: - NSTextViewDelegate

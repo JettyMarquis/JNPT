@@ -23,6 +23,10 @@ public class JNTWindowController: NSWindowController {
 
     public override func windowDidLoad() {
         super.windowDidLoad()
+        // `self` isn't available yet inside the convenience init (before self.init(window:)
+        // returns), so the delegate must be assigned here for windowDidResignKey
+        // (focus-loss autosave) to ever fire.
+        window?.delegate = self
     }
 }
 

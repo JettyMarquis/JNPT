@@ -30,10 +30,12 @@ print("=== JettyNotepad Test Suite ===\n")
 
 runMarkdownTests()
 runSpellCheckExportTests()
+runEditorViewControllerTests()
 
 runSQLiteDatabaseTests()
 runJNTSchemaTests()
 runJNTFileStoreTests()
+runAutoSaveManagerTests()
 
 runDiffMatchPatchTests()
 runSnapshotManagerTests()

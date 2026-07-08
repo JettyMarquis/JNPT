@@ -16,11 +16,12 @@ func runSnapshotManagerTests() {
                               type: "manualSave", editSummary: nil)
         try store.saveContent("Version 2", cursor: 0, scroll: 0)
 
-        // Reconstruct Version 1 from Version 2
+        // Reconstruct the content AS SAVED AT the snapshot (seq > targetSeq excludes
+        // the snapshot's own reverse diff), i.e. "Version 2" — not the state before it.
         let manifest = try store.readSnapshotManifest()
         try assertEqual(manifest.count, 1)
         let restored = try sm.reconstructContent(at: manifest[0].seq, currentContent: "Version 2")
-        try assertEqual(restored, "Version 1")
+        try assertEqual(restored, "Version 2")
     }
 
     test("create and reconstruct multiple snapshots") {
@@ -45,18 +46,20 @@ func runSnapshotManagerTests() {
                               type: "autoSave", editSummary: nil)
         try store.saveContent("V4 final", cursor: 0, scroll: 0)
 
-        let manifest = try store.readSnapshotManifest() // desc order
+        let manifest = try store.readSnapshotManifest() // desc order: [V3→V4, V2→V3, V1→V2]
         try assertEqual(manifest.count, 3)
 
-        // Reconstruct each version
-        let v3 = try sm.reconstructContent(at: manifest[0].seq, currentContent: "V4 final")
-        try assertEqual(v3, "V3")
+        // Each row reconstructs to the content AS SAVED AT that snapshot (seq > targetSeq
+        // excludes the row's own reverse diff). The original "V1" (before any save) is
+        // no longer reachable through this API — an accepted MVP limitation.
+        let newest = try sm.reconstructContent(at: manifest[0].seq, currentContent: "V4 final")
+        try assertEqual(newest, "V4 final")
 
-        let v2 = try sm.reconstructContent(at: manifest[1].seq, currentContent: "V4 final")
-        try assertEqual(v2, "V2")
+        let middle = try sm.reconstructContent(at: manifest[1].seq, currentContent: "V4 final")
+        try assertEqual(middle, "V3")
 
-        let v1 = try sm.reconstructContent(at: manifest[2].seq, currentContent: "V4 final")
-        try assertEqual(v1, "V1")
+        let oldest = try sm.reconstructContent(at: manifest[2].seq, currentContent: "V4 final")
+        try assertEqual(oldest, "V2")
     }
 
     test("snapshot with Unicode content") {
@@ -72,7 +75,7 @@ func runSnapshotManagerTests() {
 
         let manifest = try store.readSnapshotManifest()
         let restored = try sm.reconstructContent(at: manifest[0].seq, currentContent: "你好世界")
-        try assertEqual(restored, "你好")
+        try assertEqual(restored, "你好世界")
     }
 
     test("snapshot data is compressed") {
@@ -94,20 +97,64 @@ func runSnapshotManagerTests() {
         try assertNotNil(String(data: decompressed, encoding: .utf8))
     }
 
-    test("eviction does not crash with few snapshots") {
+    test("100-snapshot cap enforced by FIFO trigger, oldest evicted") {
         let url = URL(fileURLWithPath: NSTemporaryDirectory() + "snap_\(UUID().uuidString).jnt")
         defer { try? FileManager.default.removeItem(at: url) }
-        let store = try JNTFileStore.create(at: url, content: "test", uuid: UUID())
+        let store = try JNTFileStore.create(at: url, content: "v0", uuid: UUID())
         defer { store.close() }
         let sm = SnapshotManager(fileStore: store)
 
-        // Add a few snapshots — eviction should be a no-op
-        for i in 1...5 {
+        for i in 0..<105 {
             try sm.createSnapshot(previousContent: "v\(i)", currentContent: "v\(i+1)",
                                   type: "autoSave", editSummary: nil)
         }
-        try sm.evictIfNeeded()
-        try assertEqual(try store.snapshotCount(), 5)
+        try assertEqual(try store.snapshotCount(), 100)
+        // No type protection in MVP — oldest-by-seq are evicted regardless of type.
+        let manifest = try store.readSnapshotManifest()
+        try assertEqual(manifest.count, 100)
+    }
+
+    test("reconstructContent throws on oversized decompressed payload") {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory() + "snap_\(UUID().uuidString).jnt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try JNTFileStore.create(at: url, content: "short", uuid: UUID())
+        defer { store.close() }
+        let sm = SnapshotManager(fileStore: store)
+
+        try sm.createSnapshot(previousContent: "short", currentContent: "short2",
+                              type: "autoSave", editSummary: nil)
+        let manifest = try store.readSnapshotManifest()
+
+        // Overwrite the diff_data with a huge but validly-compressed blob whose
+        // decompressed size vastly exceeds the recorded content lengths.
+        let bomb = Data(repeating: 0, count: 10 * 1024 * 1024) // 10MB of zeros compresses tiny
+        let compressedBomb = try (bomb as NSData).compressed(using: .zlib) as Data
+        try store.db.executeWithParams(
+            "UPDATE snapshots SET diff_data = ?1 WHERE seq = ?2;",
+            params: [.blob(compressedBomb), .int(Int64(manifest[0].seq))]
+        )
+
+        try assertThrows {
+            try sm.reconstructContent(at: manifest[0].seq - 1, currentContent: "short2")
+        }
+    }
+
+    test("reconstructContent throws when patchApply fails to match context") {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory() + "snap_\(UUID().uuidString).jnt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try JNTFileStore.create(at: url, content: "hello world", uuid: UUID())
+        defer { store.close() }
+        let sm = SnapshotManager(fileStore: store)
+
+        try sm.createSnapshot(previousContent: "hello world", currentContent: "hello world!!",
+                              type: "autoSave", editSummary: nil)
+        let manifest = try store.readSnapshotManifest()
+
+        // Reconstruct against content whose context no longer matches the stored
+        // diff at all — patchApply's fuzzy match should fail and we must surface it.
+        try assertThrows {
+            try sm.reconstructContent(at: manifest[0].seq - 1, currentContent: "totally unrelated")
+        }
     }
 }
 

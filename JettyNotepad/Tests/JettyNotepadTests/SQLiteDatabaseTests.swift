@@ -129,4 +129,30 @@ func runSQLiteDatabaseTests() {
         db.close()
         try assertThrows { try db.query("SELECT 1;") }
     }
+
+    test("integrity_check rejects a corrupted (non-SQLite) file") {
+        let path = NSTemporaryDirectory() + "corrupt_\(UUID().uuidString).db"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        try Data([0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xAB, 0xCD]).write(to: URL(fileURLWithPath: path))
+        try assertThrows { try SQLiteDatabase(path: path) }
+    }
+
+    test("integrity_check failure does not mutate the file on disk") {
+        // integrity_check must run before PRAGMA journal_mode=WAL, so a rejected
+        // untrusted file is never written to before being judged unsafe.
+        let path = NSTemporaryDirectory() + "corrupt2_\(UUID().uuidString).db"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let garbage = Data([0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xAB, 0xCD])
+        try garbage.write(to: URL(fileURLWithPath: path))
+        try assertThrows { try SQLiteDatabase(path: path) }
+        let after = try Data(contentsOf: URL(fileURLWithPath: path))
+        try assertEqual(after, garbage)
+    }
+
+    test("integrity_check passes on a freshly created database") {
+        let path = NSTemporaryDirectory() + "fresh_\(UUID().uuidString).db"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let db = try SQLiteDatabase(path: path)
+        db.close()
+    }
 }

@@ -18,7 +18,7 @@ public class PreferencesWindowController: NSWindowController {
 }
 
 struct PreferencesView: View {
-    @AppStorage("autoSaveInterval") private var autoSaveInterval: Double = 60
+    @AppStorage(AutoSavePrefKeys.interval) private var autoSaveInterval: Double = 60
     @AppStorage("newFileOpensIn")   private var newFileOpensIn: Int = 0
 
     var body: some View {
@@ -29,9 +29,12 @@ struct PreferencesView: View {
                     Text("1 minute").tag(60.0)
                     Text("2 minutes").tag(120.0)
                     Text("5 minutes").tag(300.0)
-                    Text("Off").tag(0.0)
+                    Text("Off (idle & focus-loss saves still apply)").tag(0.0)
                 }
                 .pickerStyle(.menu)
+                Text("Changes take effect the next time a document is opened.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("New Documents") {
                 Picker("Open in:", selection: $newFileOpensIn) {
