@@ -57,10 +57,24 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
 
     public override func viewDidAppear() {
         super.viewDidAppear()
+        editorDidBecomeActive()
+    }
+
+    /// Full "this editor is now the one on screen" routine: content sync, the
+    /// one-time restored cursor/scroll application, and making the text view
+    /// first responder. Extracted from `viewDidAppear()` so a shared-window /
+    /// multi-tab host (ShellWindowController, Phase 1+) can call it explicitly
+    /// after manually mounting this editor's view — AppKit's automatic
+    /// `viewWillAppear`/`viewDidAppear` firing on manual subview
+    /// add/remove-via-containment is not something to rely on. `viewDidAppear()`
+    /// itself still calls this so the existing single-window path (and
+    /// SessionRestoreTests, which call `viewDidAppear()` directly) keeps working
+    /// unchanged.
+    func editorDidBecomeActive() {
         if let content = document?.content, textView.string != content {
             textView.string = content
         }
-        // Only on the very first appearance (document just opened) — otherwise
+        // Only on the very first activation (document just opened) — otherwise
         // switching tabs would yank the cursor/scroll back on every appear. Must
         // run after the string is set above: applying to stale (pre-content) text
         // would compute against the wrong length.

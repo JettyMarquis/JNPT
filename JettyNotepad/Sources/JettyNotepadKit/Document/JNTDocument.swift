@@ -45,6 +45,7 @@ public class JNTDocument: NSDocument {
         addWindowController(wc)
         if let editorVC = wc.contentViewController as? EditorViewController {
             editorVC.document = self
+            editorViewController = editorVC
         }
         if let window = wc.window {
             tabStateManager = TabStateManager(window: window)
@@ -178,9 +179,11 @@ public class JNTDocument: NSDocument {
 
     // MARK: - Helpers
 
-    var editorViewController: EditorViewController? {
-        windowControllers.first?.contentViewController as? EditorViewController
-    }
+    /// Stored (not derived from `windowControllers.first?.contentViewController`)
+    /// so a future shared-window/multi-tab host can assign this directly when it
+    /// creates the editor for this document, without that editor needing to be
+    /// literally the window's root contentViewController.
+    weak var editorViewController: EditorViewController?
 
     private func updateTabState() {
         let name: String
