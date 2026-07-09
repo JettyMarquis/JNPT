@@ -39,7 +39,10 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.font = .monospacedSystemFont(ofSize: currentFontSize, weight: .regular)
         textView.textContainerInset = NSSize(width: 16, height: 16)
         textView.allowsUndo = true
-        textView.undoManager?.levelsOfUndo = 100
+        // NOTE: levelsOfUndo is NOT configured here — `document` isn't set yet
+        // at loadView() time, and per-document undo isolation (undoManager(for:)
+        // below) means the manager to configure isn't known until then. See
+        // editorDidBecomeActive().
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -71,6 +74,12 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
     /// SessionRestoreTests, which call `viewDidAppear()` directly) keeps working
     /// unchanged.
     func editorDidBecomeActive() {
+        // Per-document undo isolation: NSDocument vends its own lazily-created
+        // UndoManager (see undoManager(for:) below); configure it once here
+        // rather than at loadView() time, when `document` isn't set yet. Safe
+        // to repeat on every activation — setting levelsOfUndo doesn't reset
+        // existing undo groups.
+        document?.undoManager?.levelsOfUndo = 100
         if let content = document?.content, textView.string != content {
             textView.string = content
         }
@@ -125,5 +134,16 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         document?.content = textView.string
         document?.updateChangeCount(.changeDone)
         document?.autoSaveManager.documentContentDidChange()
+    }
+
+    /// Without this override, NSTextView resolves its undo manager through
+    /// the responder chain to `window.undoManager` — harmless when every
+    /// document has its own real window, but under the shared-window
+    /// architecture (ShellWindowController) that would make every open tab
+    /// share ONE undo stack, so ⌘Z on tab B could undo an edit made in tab A.
+    /// NSDocument already vends its own lazily-created, per-document
+    /// UndoManager — return that instead.
+    public func undoManager(for view: NSTextView) -> UndoManager? {
+        document?.undoManager
     }
 }

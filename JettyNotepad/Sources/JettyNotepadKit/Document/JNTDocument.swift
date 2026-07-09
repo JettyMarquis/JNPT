@@ -7,7 +7,6 @@ public class JNTDocument: NSDocument {
     public var fileUUID: UUID = UUID()
     public let autoSaveManager = AutoSaveManager()
     public var snapshotManager: SnapshotManager?
-    private var tabStateManager: TabStateManager?
     private var isManualSave = false
 
     /// Cursor/scroll to apply once the editor mounts — from the .jnt file's last
@@ -41,20 +40,20 @@ public class JNTDocument: NSDocument {
     // MARK: - Window Controllers
 
     public override func makeWindowControllers() {
-        let wc = JNTWindowController()
-        addWindowController(wc)
-        if let editorVC = wc.contentViewController as? EditorViewController {
-            editorVC.document = self
-            editorViewController = editorVC
-        }
-        if let window = wc.window {
-            tabStateManager = TabStateManager(window: window)
-            updateTabState()
-        }
+        let proxy = DocumentProxyWindowController()
+        addWindowController(proxy)
+        ShellWindowController.shared.addTab(for: self, proxy: proxy)
         // Started here (not init) so the editor/window exist before the first
         // possible autosave fire — an autosave before the editor mounts would
         // persist cursor=0/scroll=0, discarding restored session state.
         autoSaveManager.start(interval: AutoSaveManager.configuredInterval())
+    }
+
+    /// All documents share the one real window owned by ShellWindowController
+    /// (this document's own window controller is a windowless proxy) — Save/
+    /// dirty-close sheets must attach there.
+    public override var windowForSheet: NSWindow? {
+        ShellWindowController.shared.window
     }
 
     // MARK: - Reading
@@ -153,48 +152,15 @@ public class JNTDocument: NSDocument {
         updateTabState()
     }
 
-    // MARK: - Session Restoration
-
-    public override func encodeRestorableState(with coder: NSCoder) {
-        super.encodeRestorableState(with: coder)
-        coder.encode(content, forKey: "jnt.unsavedContent")
-        let cursorPos = editorViewController?.textView.selectedRange().location ?? 0
-        coder.encode(cursorPos, forKey: "jnt.cursorPos")
-        let scrollY = editorViewController?.textView.enclosingScrollView?.contentView.bounds.origin.y ?? 0
-        coder.encode(Double(scrollY), forKey: "jnt.scrollPos")
-    }
-
-    public override func restoreState(with coder: NSCoder) {
-        super.restoreState(with: coder)
-        if let restored = coder.decodeObject(forKey: "jnt.unsavedContent") as? String {
-            content = restored
-        }
-        if coder.containsValue(forKey: "jnt.cursorPos") {
-            restoredCursor = coder.decodeInteger(forKey: "jnt.cursorPos")
-        }
-        if coder.containsValue(forKey: "jnt.scrollPos") {
-            restoredScroll = coder.decodeDouble(forKey: "jnt.scrollPos")
-        }
-    }
-
     // MARK: - Helpers
 
     /// Stored (not derived from `windowControllers.first?.contentViewController`)
     /// so a future shared-window/multi-tab host can assign this directly when it
     /// creates the editor for this document, without that editor needing to be
     /// literally the window's root contentViewController.
-    weak var editorViewController: EditorViewController?
+    public weak var editorViewController: EditorViewController?
 
     private func updateTabState() {
-        let name: String
-        if let displayName = try? fileStore?.readMetadata(key: "display_name") {
-            name = displayName
-        } else {
-            name = JNTFileStore.displayNameFromContent(content)
-        }
-        // Proxy icon + title-bar rename/move via double-click on title
-        windowControllers.first?.window?.representedURL = fileURL
-        tabStateManager?.updateBaseName(name)
-        tabStateManager?.setState(content != lastSavedContent ? .modified : .saved)
+        ShellWindowController.shared.refreshTab(for: self)
     }
 }

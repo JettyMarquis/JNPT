@@ -52,26 +52,37 @@ public final class MenuBuilder {
 
         fileMenu.addItem(.separator())
 
-        // NOTE (Phase 0 — pure extraction, behavior unchanged): these remain the
-        // original nil-target NSDocument selectors for now. Phase 3 retargets
-        // Save/Save As/Revert/Print/Close to ShellWindowController explicitly
-        // (see that phase's changes) once the shared-window architecture from
-        // Phase 1 exists — nil-target resolution via NSWindowController.document
-        // stops identifying "the active tab's document" unambiguously once
-        // multiple documents share one window.
-        fileMenu.addItem(withTitle: "Save", action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
+        // Save/Save As/Revert/Print/Close target ShellWindowController.shared
+        // EXPLICITLY (not nil-target NSDocument selectors as before): under the
+        // shared-window architecture (every document's own window controller is
+        // a windowless DocumentProxyWindowController), nil-target resolution via
+        // NSWindowController.document no longer identifies "the active tab's
+        // document" unambiguously — it would also break entirely whenever a
+        // different window (History, Preferences) is key. ShellWindowController
+        // forwards to activeDocument and implements validateMenuItem to restore
+        // the enabled/disabled logic NSDocument otherwise provides for free.
+        let shell = ShellWindowController.shared
+        let saveItem = NSMenuItem(title: "Save", action: #selector(ShellWindowController.saveActiveDocument(_:)), keyEquivalent: "s")
+        saveItem.target = shell
+        fileMenu.addItem(saveItem)
 
-        let saveAsItem = NSMenuItem(title: "Save As...", action: #selector(NSDocument.saveAs(_:)), keyEquivalent: "S")
+        let saveAsItem = NSMenuItem(title: "Save As...", action: #selector(ShellWindowController.saveActiveDocumentAs(_:)), keyEquivalent: "S")
         saveAsItem.keyEquivalentModifierMask = [.command, .shift]
+        saveAsItem.target = shell
         fileMenu.addItem(saveAsItem)
 
-        fileMenu.addItem(withTitle: "Revert to Saved",
-            action: #selector(NSDocument.revertToSaved(_:)), keyEquivalent: "")
+        let revertItem = NSMenuItem(title: "Revert to Saved", action: #selector(ShellWindowController.revertActiveDocument(_:)), keyEquivalent: "")
+        revertItem.target = shell
+        fileMenu.addItem(revertItem)
 
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let closeItem = NSMenuItem(title: "Close", action: #selector(ShellWindowController.closeActiveTab(_:)), keyEquivalent: "w")
+        closeItem.target = shell
+        fileMenu.addItem(closeItem)
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "Print...", action: #selector(NSDocument.printDocument(_:)), keyEquivalent: "p")
+        let printItem = NSMenuItem(title: "Print...", action: #selector(ShellWindowController.printActiveDocument(_:)), keyEquivalent: "p")
+        printItem.target = shell
+        fileMenu.addItem(printItem)
     }
 
     private func buildEditMenu() {
