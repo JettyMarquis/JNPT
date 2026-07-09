@@ -15,7 +15,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = builder.mainMenu
     }
 
-    public func applicationDidFinishLaunching(_ notification: Notification) {}
+    public func applicationDidFinishLaunching(_ notification: Notification) {
+        // Launched via `swift run` (no app bundle/Info.plist), the process
+        // never automatically becomes the frontmost app — the window can be
+        // visible while keyboard input still goes to the launching terminal.
+        // A real .app launched from Finder does not need this.
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     public func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { true }
 
