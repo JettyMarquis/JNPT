@@ -23,7 +23,19 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    public func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { true }
+    // Without opting in, macOS 12+ either skips window-state restoration
+    // outright or restores it insecurely with a Console warning — since
+    // ShellWindowController's restorable state already round-trips through
+    // typed secure decoding (`decodeObject(of: NSData.self, forKey:)`), it's
+    // safe to declare support.
+    public func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+    // Only fall back to a blank tab if session restoration didn't already
+    // recover any tabs — otherwise a relaunch with a restored session gets an
+    // extra, unwanted blank tab alongside the restored ones.
+    public func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        ShellWindowController.shared.tabs.isEmpty
+    }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
