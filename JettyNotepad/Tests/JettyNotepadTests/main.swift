@@ -42,5 +42,7 @@ runSnapshotManagerTests()
 runSaveAsTests()
 runHistoryRestoreTests()
 runSessionRestoreTests()
+runRestorableSessionTests()
+runShellWindowControllerTests()
 
 printSummary()

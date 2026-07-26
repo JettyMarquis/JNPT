@@ -39,7 +39,10 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.font = .monospacedSystemFont(ofSize: currentFontSize, weight: .regular)
         textView.textContainerInset = NSSize(width: 16, height: 16)
         textView.allowsUndo = true
-        textView.undoManager?.levelsOfUndo = 100
+        // NOTE: levelsOfUndo is NOT configured here — `document` isn't set yet
+        // at loadView() time, and per-document undo isolation (undoManager(for:)
+        // below) means the manager to configure isn't known until then. See
+        // editorDidBecomeActive().
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -57,10 +60,30 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
 
     public override func viewDidAppear() {
         super.viewDidAppear()
+        editorDidBecomeActive()
+    }
+
+    /// Full "this editor is now the one on screen" routine: content sync, the
+    /// one-time restored cursor/scroll application, and making the text view
+    /// first responder. Extracted from `viewDidAppear()` so a shared-window /
+    /// multi-tab host (ShellWindowController, Phase 1+) can call it explicitly
+    /// after manually mounting this editor's view — AppKit's automatic
+    /// `viewWillAppear`/`viewDidAppear` firing on manual subview
+    /// add/remove-via-containment is not something to rely on. `viewDidAppear()`
+    /// itself still calls this so the existing single-window path (and
+    /// SessionRestoreTests, which call `viewDidAppear()` directly) keeps working
+    /// unchanged.
+    func editorDidBecomeActive() {
+        // Per-document undo isolation: NSDocument vends its own lazily-created
+        // UndoManager (see undoManager(for:) below); configure it once here
+        // rather than at loadView() time, when `document` isn't set yet. Safe
+        // to repeat on every activation — setting levelsOfUndo doesn't reset
+        // existing undo groups.
+        document?.undoManager?.levelsOfUndo = 100
         if let content = document?.content, textView.string != content {
             textView.string = content
         }
-        // Only on the very first appearance (document just opened) — otherwise
+        // Only on the very first activation (document just opened) — otherwise
         // switching tabs would yank the cursor/scroll back on every appear. Must
         // run after the string is set above: applying to stale (pre-content) text
         // would compute against the wrong length.
@@ -111,5 +134,16 @@ public class EditorViewController: NSViewController, NSTextViewDelegate {
         document?.content = textView.string
         document?.updateChangeCount(.changeDone)
         document?.autoSaveManager.documentContentDidChange()
+    }
+
+    /// Without this override, NSTextView resolves its undo manager through
+    /// the responder chain to `window.undoManager` — harmless when every
+    /// document has its own real window, but under the shared-window
+    /// architecture (ShellWindowController) that would make every open tab
+    /// share ONE undo stack, so ⌘Z on tab B could undo an edit made in tab A.
+    /// NSDocument already vends its own lazily-created, per-document
+    /// UndoManager — return that instead.
+    public func undoManager(for view: NSTextView) -> UndoManager? {
+        document?.undoManager
     }
 }

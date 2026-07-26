@@ -5,12 +5,15 @@ import JettyNotepadKit
 func runSessionRestoreTests() {
     print("\nSessionRestoreTests:")
 
+    // Under the shared-window architecture, the document's own window
+    // controller is a windowless DocumentProxyWindowController (no
+    // contentViewController of its own) — ShellWindowController.addTab
+    // assigns `doc.editorViewController` directly instead.
     func editorViewController(for doc: JNTDocument) throws -> EditorViewController {
         doc.makeWindowControllers()
-        guard let vc = doc.windowControllers.first?.contentViewController as? EditorViewController else {
+        guard let vc = doc.editorViewController else {
             throw AssertionError(description: "no EditorViewController from makeWindowControllers()")
         }
-        _ = vc.view // force loadView()
         return vc
     }
 

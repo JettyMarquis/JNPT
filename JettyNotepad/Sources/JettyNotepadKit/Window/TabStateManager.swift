@@ -14,26 +14,19 @@ public enum TabState {
     }
 }
 
-public class TabStateManager {
-    private weak var window: NSWindow?
-    private var baseName: String = "Untitled"
-    private(set) public var state: TabState = .saved
-
-    public init(window: NSWindow) {
-        self.window = window
-    }
-
-    public func updateBaseName(_ name: String) {
-        baseName = name
-        applyTitle()
-    }
-
-    public func setState(_ newState: TabState) {
-        state = newState
-        applyTitle()
-    }
-
-    private func applyTitle() {
-        window?.title = baseName + state.symbol
+/// Pure formatter — computes the display label for a tab pill / window title
+/// from a base name and state. No side effects, no window reference.
+///
+/// Previously this was a per-document class instance holding `weak var
+/// window` and writing `window.title` directly as a side effect of every
+/// state change. That design assumed one document = one window. Under the
+/// shared-window architecture, only `ShellWindowController.refreshTab(for:)`
+/// writes `window.title`, and only for the currently ACTIVE tab — a
+/// per-document manager with its own window reference would let a
+/// BACKGROUND tab's state change (e.g. its autosave finishing) clobber the
+/// active tab's title.
+public enum TabStateManager {
+    public static func label(baseName: String, state: TabState) -> String {
+        baseName + state.symbol
     }
 }
